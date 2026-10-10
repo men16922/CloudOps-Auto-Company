@@ -1,0 +1,8 @@
+{
+  "brief": "docs/AGENT_BRIEF.md",
+  "status": "docs/STATUS.md",
+  "plan": "docs/NEXT_PLAN.md",
+  "log": "docs/PROGRESS_LOG.md",
+  "lessons": "docs/LESSONS.md",
+  "gate": "make check"
+}

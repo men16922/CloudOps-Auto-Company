@@ -1,0 +1,52 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "types": [
+      "node",
+      "react",
+      "react-dom",
+      "vite/client"
+    ]
+  },
+  "files": [
+    "src/company-main.tsx",
+    "src/vite-env.d.ts",
+    "server/modules/aws/organization/index.ts",
+    "server/modules/aws/organization/organization-cli-main.ts",
+    "server/organization-api.test.ts",
+    "server/organization-cli.test.ts",
+    "server/organization-directory.test.ts",
+    "server/organization-web-client.test.ts",
+    "server/organization-worker-docker.test.ts",
+    "server/organization-worker-leases.test.ts",
+    "server/organization-worker-process.test.ts",
+    "server/organization-worker-router.test.ts",
+    "server/organization-worker-supervisor.test.ts",
+    "tests/fixtures/organization-web.tsx",
+    "server/organization-local-main.ts",
+    "server/oidc-web-identity.test.ts",
+    "server/organization-deployment.test.ts",
+    "server/oidc-web-client.test.ts",
+    "server/cloud-store.test.ts",
+    "server/cloud-dynamodb-store.test.ts",
+    "tests/opt-in/dynamodb-local.conformance.ts",
+    "tests/opt-in/dynamodb-aws.conformance.ts",
+    "server/organization-saml-bridge.test.ts"
+  ]
+}

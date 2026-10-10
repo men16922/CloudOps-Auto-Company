@@ -1,0 +1,12 @@
+{
+  "kind": "oidc",
+  "issuer": "https://idp.example.invalid/synthetic-tenant",
+  "audience": "cloudops-synthetic-api",
+  "algorithms": ["RS256"],
+  "jwks": {
+    "uri": "https://idp.example.invalid/synthetic-tenant/jwks",
+    "cacheSeconds": 600
+  },
+  "clockSkewSeconds": 60,
+  "maxLifetimeSeconds": 3600
+}

@@ -1,0 +1,16 @@
+node_modules/
+.tools/
+.env
+.env.*
+.data/
+.DS_Store
+dist-company/
+dist-company-api/
+dist-worker/
+test-results/
+playwright-report/
+*.tsbuildinfo
+*.log
+*.pem
+*.key
+.claude/settings.local.json

@@ -1,0 +1,46 @@
+{
+  "name": "cloudops-auto-company",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "npm run typecheck && npm run check:boundary && vite build && node scripts/build-company-api.mjs && node scripts/build-cli-worker.mjs",
+    "dev": "vite",
+    "preview": "vite preview",
+    "start:local": "node dist-company-api/local.mjs serve",
+    "test:company": "CLOUDOPS_OFFLINE_TEST=1 node scripts/check-company.mjs",
+    "check:boundary": "node scripts/check-source-boundary.mjs",
+    "build:cli-worker": "node scripts/build-cli-worker.mjs",
+    "test:server": "CLOUDOPS_OFFLINE_TEST=1 node --import tsx --test server/*.test.ts",
+    "test:organization-web": "CLOUDOPS_OFFLINE_TEST=1 node --import tsx scripts/check-organization-web.mjs",
+    "verify:worker-isolation": "CLOUDOPS_ORGANIZATION_DOCKER_ENABLED=1 node --import tsx scripts/verify-worker-isolation.mjs",
+    "verify:worker-recovery": "CLOUDOPS_ORGANIZATION_DOCKER_ENABLED=1 node scripts/verify-worker-recovery.mjs",
+    "verify:dynamodb-local": "node scripts/verify-dynamodb-local.mjs",
+    "check": "npm run build && npm run test:server && npm run test:company && npm run test:organization-web"
+  },
+  "dependencies": {
+    "@cloudscape-design/components": "3.0.1394",
+    "@cloudscape-design/global-styles": "1.0.71",
+    "@node-saml/node-saml": "5.1.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.64.0",
+    "@types/node": "26.6.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "esbuild": "0.28.2",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vite": "8.3.4",
+    "xml-crypto": "6.3.3"
+  }
+}

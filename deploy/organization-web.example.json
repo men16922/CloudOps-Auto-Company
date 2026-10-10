@@ -1,0 +1,31 @@
+{
+  "publicOrigin": "https://cloudops.example.invalid",
+  "web": {
+    "configured": true,
+    "scope": {
+      "organizationId": "synthetic-org",
+      "workspaceId": "synthetic-workspace",
+      "label": "Synthetic organization"
+    },
+    "identity": {
+      "method": "company"
+    }
+  },
+  "connections": [
+    {
+      "configurationId": "aws-read",
+      "label": "Synthetic AWS read access",
+      "organizationId": "synthetic-org",
+      "workspaceId": "synthetic-workspace",
+      "startUrl": "https://synthetic-example.awsapps.com/start",
+      "ssoRegion": "us-east-1",
+      "accountId": "123456789012",
+      "roleName": "ReadOnlyAccess",
+      "region": "us-east-1",
+      "directory": {
+        "awsOrganizationId": "o-synthetic1",
+        "parentId": "r-demo"
+      }
+    }
+  ]
+}

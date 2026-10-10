@@ -1,0 +1,12 @@
+import { z } from 'zod';
+import { directoryScopeSchema } from './directory';
+const account = z.string().regex(/^\d{12}$/), role = z.string().min(1).max(128), region = z.string().regex(/^[a-z]{2}(?:-[a-z]+)+-\d$/);
+export const connectionViewSchema = z.object({ id: z.uuid(), configurationId: z.string().min(1).max(64), accountId: account, roleName: role, region, createdAt: z.iso.datetime(), directory: directoryScopeSchema.optional() }).strict();
+export const connectionListSchema = z.object({ items: z.array(connectionViewSchema).max(20), configurations: z.array(z.object({ id: z.string().min(1).max(64), label: z.string().max(128), accountId: account, roleName: role, region, directory: directoryScopeSchema.optional() }).strict()).max(1000) }).strict();
+export const connectionStateSchema = z.object({ connectionId: z.uuid(), jobId: z.uuid().optional(), status: z.enum(['disconnected', 'starting', 'awaiting-user', 'verifying', 'connected', 'denied', 'expired', 'failed', 'cancelled']), deadline: z.iso.datetime().optional(), accountId: account, roleName: role, region, code: z.string().regex(/^[a-z_]{1,64}$/).optional(), userCode: z.string().regex(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/).optional(), verificationUri: z.url().optional() }).strict();
+export const connectionPageSchema = z.object({ connectionId: z.uuid(), accountId: account, region, operation: z.enum(['lambda', 'dynamodb', 'alarms']), collectedAt: z.iso.datetime(), items: z.array(z.object({ name: z.string().max(1024), runtime: z.string().max(100).nullable().optional(), modified: z.string().max(100).optional(), state: z.string().max(100).optional() }).strict()).max(100), hasMore: z.boolean() }).strict();
+export type ConnectionView = z.infer<typeof connectionViewSchema>;
+export type ConnectionList = z.infer<typeof connectionListSchema>;
+export type ConnectionState = z.infer<typeof connectionStateSchema>;
+export type ConnectionPage = z.infer<typeof connectionPageSchema>;
+export type ConnectionCommand = { operation: 'login' | 'verify' | 'inspect' | 'directory' | 'disconnect' | 'logout'; service?: ConnectionPage['operation']; cursor?: string };
