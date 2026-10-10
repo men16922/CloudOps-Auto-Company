@@ -64,6 +64,7 @@ node dist-company-api/local.mjs serve    # 시작 로그에 worker provisioner: 
 | 7 | 종료 시 worker 제거, 재시작 후 status는 worker를 만들지 않고 503 | 통과 |
 | 9 | 실행 후 남은 worker container 0, 임시 metadata 삭제 | 통과 |
 | 1·5 | 실제 Identity Center Device Code 로그인/STS/조회/로그아웃(개인 테스트 계정, 외부 통신 가능 테스트 네트워크) | 통과(CLI 2.30 `#/device` URL 수정 후) |
-| 8 | 호스트 SIGKILL(worker ready) → 재시작·lease 만료에도 재배정 없음 → `reconcile-worker` 후에만 2세대 (`npm run verify:worker-recovery`, 8/8) | 통과. daemon 지연·생성 도중 종료는 합성 테스트로만 확인 |
+| 8 | 호스트 SIGKILL(worker ready) → 재시작·lease 만료에도 재배정 없음 → `reconcile-worker` 후에만 2세대 (`npm run verify:worker-recovery`, 8/8) | 통과 |
+| 8b | daemon 지연: create가 client 포기 뒤 40초에 완료 → 늦은 container는 시작·연결되지 않음, 자동 재시도 없음, reconcile은 미확인 생성에 receipt를 만들지 않음 → 운영자가 조사한 ID만 전체 검증 후 제거·retire (`npm run verify:worker-daemon-delay`, 7/7) | 통과 |
 
 이 결과는 이 Mac의 Docker Desktop VM에 대한 근거이며, 회사 Linux 호스트·네트워크 정책·swap/디스크 정책의 검증을 대신하지 않는다.

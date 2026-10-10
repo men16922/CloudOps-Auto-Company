@@ -19,6 +19,7 @@
     "test:organization-web": "CLOUDOPS_OFFLINE_TEST=1 node --import tsx scripts/check-organization-web.mjs",
     "verify:worker-isolation": "CLOUDOPS_ORGANIZATION_DOCKER_ENABLED=1 node --import tsx scripts/verify-worker-isolation.mjs",
     "verify:worker-recovery": "CLOUDOPS_ORGANIZATION_DOCKER_ENABLED=1 node scripts/verify-worker-recovery.mjs",
+    "verify:worker-daemon-delay": "CLOUDOPS_ORGANIZATION_DOCKER_ENABLED=1 node scripts/verify-worker-daemon-delay.mjs",
     "verify:dynamodb-local": "node scripts/verify-dynamodb-local.mjs",
     "check": "npm run build && npm run test:server && npm run test:company && npm run test:organization-web"
   },

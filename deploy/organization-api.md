@@ -34,12 +34,13 @@ ID token과 access token 중 무엇을 API Bearer로 쓸지, audience 값, tenan
 | `CLOUDOPS_WEB_IDENTITY` | OIDC verifier JSON. 없으면 API 503 |
 | `CLOUDOPS_LOCAL_STORE` | SQLite 경로. 기본 `.data/organization-local.sqlite`(Git 제외) |
 | `CLOUDOPS_LOCAL_HOST`/`PORT` | 기본 127.0.0.1:5176 |
+| `CLOUDOPS_DYNAMODB_STORE` | 선택 DynamoDB store JSON(`tableName`/`region`/`endpoint?`). 자격은 환경 변수 `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`만 쓰고 CLI 프로필은 읽지 않는다 |
 | `CLOUDOPS_TLS_CERT_FILE`/`KEY_FILE` | 선택 TLS(PEM). 설정하면 https로 서비스하며 publicOrigin도 `https://host:port`여야 한다. IdP가 http ACS를 거부할 때 쓴다 |
 | `CLOUDOPS_DOCKER_WORKER_CONFIG` | 승인된 격리 검증용 Docker driver 설정. `CLOUDOPS_ORGANIZATION_DOCKER_ENABLED=1`도 필요하며 오프라인 테스트에서는 시작을 거부한다. [격리 검증 절차](organization-cli-worker/isolation-verification.md) |
 
 membership은 `local.mjs actor --issuer <url> --subject <sub> [--tenant <id>]`로 actorId를 계산한 뒤 `local.mjs provision-membership <file.json>`으로 로컬 store에 넣는다. HTTP로 노출하지 않는 신뢰된 관리 경로이며 version은 증가만 허용한다. 실제 회사 설정·사용자 식별자를 담은 파일은 Git에 넣지 않는다.
 
-`local.mjs reconcile-worker <connectionId>`는 비정상 종료 뒤 운영자 회수용이다. 만료된(`unknown`) lease만 대상으로 하고, Docker driver로 기록된 container를 fence·제거해 stop/cache 회수 receipt를 받은 뒤에만 retire한다. 살아 있는 lease는 거부한다. 그 worker를 만든 설정(imageId 등)으로 실행해야 driver의 무결성 검사를 통과한다. `serve`는 SIGINT/SIGTERM/SIGHUP에서 worker를 회수한 뒤 종료한다.
+`local.mjs reconcile-worker <connectionId>`는 비정상 종료 뒤 운영자 회수용이다. 만료된(`unknown`) lease만 대상으로 하고, Docker driver로 기록된 container를 fence·제거해 stop/cache 회수 receipt를 받은 뒤에만 retire한다. 살아 있는 lease는 거부한다. 그 worker를 만든 설정(imageId 등)으로 실행해야 driver의 무결성 검사를 통과한다. 생성 확인이 유실된 경우(daemon 지연 등)에는 receipt를 만들지 않는다. 운영자가 조사해 `--investigated-container <id>`를 주면, fence됐고 create가 `unknown`이며 start가 없는 record에 한해 driver가 이름·label·이미지·설정·제한·mount를 전부 검증한다. 그 뒤에만 제거·부재 확인·retire를 진행하며, 이름으로 찾아 지우지는 않는다. `serve`는 SIGINT/SIGTERM/SIGHUP에서 worker를 회수한 뒤 종료한다.
 
 `local.mjs check-deployment <deployment.json> [oidc-verifier.json]`은 두 파일을 함께 검증한다. 브라우저 OIDC issuer/clientId와 서버 verifier issuer/audience(id_token Bearer일 때)가 다르면 실패한다. 출력은 계정 ID·host를 가린 요약과 경고(미설정, http loopback 등)라 검토 자료로 붙일 수 있다.
 

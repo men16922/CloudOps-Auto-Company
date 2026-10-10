@@ -90,6 +90,25 @@ export class DockerOrganizationWorkerProvisioner implements OrganizationWorkerPr
       return { input: pipe.input, output: pipe.output, receipt: { ...allocation.handle, ready: true } };
     } catch { await pipe.close(); throw dockerWorkerFailure(); }
   }
+  /** Operator recovery after investigation of a create whose confirmation was lost (e.g. a daemon finished late).
+   * Only a fenced, unretired record with an `unknown` create, no recorded container and no start step qualifies.
+   * The operator-supplied ID must pass the full inspection (name, labels incl. lease/generation/supervisor/cache/config,
+   * image, limits, mounts); there is still no name lookup. The adopted container is then removed through fenceAndStop,
+   * which verifies absence before retiring.
+   */
+  async adoptInvestigatedContainer(input: WorkerAllocation, containerId: string, signal: AbortSignal): Promise<WorkerRetirementReceipt> {
+    const allocation = checkedAllocation(input), id = dockerContainerIdSchema.parse(containerId); this.check(signal);
+    const eligible = (value: RecordValue | undefined) => Boolean(value && value.fenced && !value.retired && !value.containerId && value.create?.state === 'unknown' && !value.start);
+    if (!eligible(await this.store.transact(tx => this.read(tx, allocation)))) throw dockerWorkerFailure();
+    const state = await this.engine.inspect(id, checkedAllocation(allocation), signal);
+    if (state === 'absent') throw dockerWorkerFailure();
+    await this.store.transact(async tx => {
+      const value = await this.read(tx, allocation);
+      if (!eligible(value)) throw dockerWorkerFailure();
+      tx.put(keyOf(allocation), recordSchema.parse({ ...value, create: { ...value!.create!, state: 'confirmed' }, containerId: id }));
+    });
+    return this.fenceAndStop(allocation, signal);
+  }
   async fenceAndStop(input: WorkerAllocation, signal: AbortSignal): Promise<WorkerRetirementReceipt> {
     const allocation = checkedAllocation(input); this.check(signal);
     const snapshot = await this.store.transact(async tx => {

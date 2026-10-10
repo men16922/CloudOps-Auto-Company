@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { identityActor } from './cloud-auth';
 import { SqliteCloudStore } from './cloud-sqlite-store';
+import { DynamoDbCloudStore, environmentCredentials } from './cloud-dynamodb-store';
 import { deploymentSummary, dockerProvisionerFromConfig, provisionLocalMembership, reconcileLocalWorker, startLocalOrganizationHost } from './organization-local-host';
 
 const usage = `CloudOps Auto local organization host (loopback verification only; not a production server)
@@ -13,13 +14,17 @@ const usage = `CloudOps Auto local organization host (loopback verification only
   provision-membership <membership.json>  Trusted bootstrap of a versioned membership into the local store.
   check-deployment <deployment.json> [oidc-verifier.json]
                                           Validate trusted files together and print a redacted summary.
-  reconcile-worker <connectionId>         After an ungraceful exit: fence/remove an expired worker and retire its
-                                          lease (needs CLOUDOPS_DOCKER_WORKER_CONFIG and the Docker enable flag).
+  reconcile-worker <connectionId> [--investigated-container <id>]
+                                          After an ungraceful exit: fence/remove an expired worker and retire its
+                                          lease (needs CLOUDOPS_DOCKER_WORKER_CONFIG and the Docker enable flag). The
+                                          investigated ID is only for a create whose confirmation was lost.
 
 Environment
   CLOUDOPS_DEPLOYMENT    trusted deployment JSON (publicOrigin/web/connections). Absent: unconfigured.
   CLOUDOPS_WEB_IDENTITY  OIDC verifier JSON. Absent: the API stays unconfigured (fail closed).
   CLOUDOPS_LOCAL_STORE   SQLite test-adapter path (default .data/organization-local.sqlite).
+  CLOUDOPS_DYNAMODB_STORE  optional DynamoDB store JSON {tableName, region, endpoint?}; credentials come only from
+                         AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY[/AWS_SESSION_TOKEN] (no CLI profile lookup).
   CLOUDOPS_LOCAL_HOST    127.0.0.1 or localhost (default 127.0.0.1).
   CLOUDOPS_LOCAL_PORT    default 5176.
   CLOUDOPS_WEB_ROOT      built web directory (default dist-company).
@@ -28,7 +33,11 @@ Environment
                          CLOUDOPS_ORGANIZATION_DOCKER_ENABLED=1. Absent: no provisioner, AWS login/inspect return worker_unavailable.`;
 
 const readJson = (path: string) => JSON.parse(readFileSync(resolve(path), 'utf8')) as unknown;
-function openStore() {
+function openStore(): { transact: SqliteCloudStore['transact']; close(): void } {
+  if (process.env.CLOUDOPS_DYNAMODB_STORE) {
+    const store = new DynamoDbCloudStore(readJson(process.env.CLOUDOPS_DYNAMODB_STORE), { credentials: environmentCredentials() });
+    return { transact: body => store.transact(body), close: () => undefined };
+  }
   const path = resolve(process.env.CLOUDOPS_LOCAL_STORE ?? '.data/organization-local.sqlite');
   // Only directories created here get the private mode; an existing directory is left unchanged.
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
@@ -45,10 +54,12 @@ try {
     const store = openStore();
     try { const value = await provisionLocalMembership(store, readJson(rest[0]!)); console.log(`Provisioned membership version ${value.version} for ${value.organizationId}/${value.workspaceId}.`); }
     finally { store.close(); }
-  } else if (command === 'reconcile-worker' && rest.length === 1) {
+  } else if (command === 'reconcile-worker' && rest.length >= 1) {
     if (!process.env.CLOUDOPS_DOCKER_WORKER_CONFIG) throw new Error('CLOUDOPS_DOCKER_WORKER_CONFIG is required.');
+    const { values, positionals } = parseArgs({ args: rest, options: { 'investigated-container': { type: 'string' } }, allowPositionals: true, strict: true });
+    if (positionals.length !== 1) throw new Error('reconcile-worker takes exactly one connectionId.');
     const store = openStore();
-    try { console.log(await reconcileLocalWorker(store, rest[0]!, dockerProvisionerFromConfig(store, readJson(process.env.CLOUDOPS_DOCKER_WORKER_CONFIG)))); }
+    try { console.log(await reconcileLocalWorker(store, positionals[0]!, dockerProvisionerFromConfig(store, readJson(process.env.CLOUDOPS_DOCKER_WORKER_CONFIG)), undefined, values['investigated-container'])); }
     finally { store.close(); }
   } else if (command === 'check-deployment' && (rest.length === 1 || rest.length === 2)) {
     console.log(JSON.stringify(deploymentSummary(readJson(rest[0]!), rest[1] ? readJson(rest[1]) : undefined), null, 2));

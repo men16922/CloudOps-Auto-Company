@@ -1,5 +1,9 @@
 # Progress log
 
+## 2026-10-10 — daemon 지연·DynamoDB local host
+- `verify-worker-daemon-delay.mjs` 실제 Docker 7/7(늦은 create fail-closed, 조사한 ID만 전체 검증 후 회수). `adoptInvestigatedContainer` + `reconcile-worker --investigated-container`.
+- local host `CLOUDOPS_DYNAMODB_STORE`, DynamoDB Local에서 host smoke 통과.
+
 ## 2026-10-10 — worker 장애 주입
 - `scripts/verify-worker-recovery.mjs`(npm `verify:worker-recovery`): SIGKILL→재배정 없음→만료 후에도 없음→reconcile 후 2세대, 실제 Docker 8/8.
 

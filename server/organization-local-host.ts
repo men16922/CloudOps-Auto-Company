@@ -121,7 +121,8 @@ export function dockerProvisionerFromConfig(store: CloudStore, config: unknown) 
  * lease is refused. The provisioner must fence/remove the recorded worker and attest stop + cache revocation
  * before the lease is retired; otherwise it stays unknown and no new generation is allocated.
  */
-export async function reconcileLocalWorker(store: CloudStore, connectionId: string, provisioner: OrganizationWorkerProvisioner, now?: () => number) {
+export async function reconcileLocalWorker(store: CloudStore, connectionId: string, provisioner: OrganizationWorkerProvisioner & {
+  adoptInvestigatedContainer?: DockerOrganizationWorkerProvisioner['adoptInvestigatedContainer'] }, now?: () => number, investigatedContainerId?: string) {
   const id = z.uuid().parse(connectionId);
   const record = await store.transact(tx => tx.get<{ binding: unknown }>(`organization-connection:${id}`));
   if (!record) throw new Error('Unknown connection.');
@@ -131,7 +132,11 @@ export async function reconcileLocalWorker(store: CloudStore, connectionId: stri
   if (lease.state === 'retired') return 'already-retired' as const;
   if (lease.state !== 'unknown') throw new Error('The worker lease is still active. Stop its host and wait for the lease to expire before reconciling.');
   const handle = workerLeaseHandle(lease);
-  const receipt = await provisioner.fenceAndStop({ binding, handle }, AbortSignal.timeout(25_000));
+  // An investigated container ID is only for an unconfirmed create; the driver still verifies it completely.
+  const signal = AbortSignal.timeout(25_000);
+  if (investigatedContainerId !== undefined && !provisioner.adoptInvestigatedContainer) throw new Error('This provisioner cannot adopt an investigated container.');
+  const receipt = investigatedContainerId === undefined ? await provisioner.fenceAndStop({ binding, handle }, signal)
+    : await provisioner.adoptInvestigatedContainer!({ binding, handle }, investigatedContainerId, signal);
   await leases.retire(binding, handle, receipt);
   return 'retired' as const;
 }

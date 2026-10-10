@@ -31,7 +31,7 @@ async function fixture(t: TestContext) {
     daemonId: 'synthetic-engine-a', imageId: `sha256:${'a'.repeat(64)}`, network: 'synthetic-aws-egress' };
   const calls: string[][] = [], aws: string[] = [], containers = new Map<string, Container>();
   const hooks: { create?: () => Promise<void>; start?: () => Promise<void>; remove?: () => Promise<void>;
-    createError?: boolean; startError?: boolean; wrongDaemon?: boolean; observation?: (value: Record<string, unknown>) => Record<string, unknown> } = {};
+    createError?: boolean; lostCreateResponse?: boolean; startError?: boolean; wrongDaemon?: boolean; observation?: (value: Record<string, unknown>) => Record<string, unknown> } = {};
   const transport: DockerCommandTransport = {
     assertAvailable() {},
     async exec(input) {
@@ -56,7 +56,9 @@ async function fixture(t: TestContext) {
           } }, () => now);
           serving = serveCliWorker(worker, input, output, allocation.handle);
         } });
-        containers.set(id, value); return `${id}\n`;
+        containers.set(id, value);
+        if (hooks.lostCreateResponse) throw new Error('synthetic lost create response after the daemon created it');
+        return `${id}\n`;
       }
       const id = args.at(-1)!;
       if (operation === 'start') {
@@ -360,4 +362,28 @@ test('an unconfirmed attachment close still removes its known container and reta
   await assert.rejects(driver.fenceAndStop(a, signal()));
   assert.equal(s.containers.size, 0); assert.equal(s.count('rm'), 1); assert.equal((await s.record(a))?.retired, false);
   await driver.fenceAndStop(a, signal()); assert.equal(closes, 2); assert.equal((await s.record(a))?.retired, true);
+});
+
+test('an operator can adopt only a verified late-created container after investigation, then retire it', async t => {
+  const s = await fixture(t), a = await s.allocation();
+  s.hooks.lostCreateResponse = true;
+  await assert.rejects(s.provider.provision(a, signal()), failed);
+  s.hooks.lostCreateResponse = false;
+  const [late] = [...s.containers.keys()];
+  assert.equal(s.containers.size, 1);
+  await assert.rejects(s.provider.adoptInvestigatedContainer(a, late!, signal()), failed, 'an unfenced record is not eligible');
+  await assert.rejects(s.provider.fenceAndStop(a, signal()), failed, 'an unconfirmed create never yields a receipt');
+  assert.equal(s.containers.size, 1);
+  await assert.rejects(s.provider.adoptInvestigatedContainer(a, 'f'.repeat(64), signal()), failed, 'an absent ID is refused');
+  const b = await s.allocation('actor-b'); await s.provider.provision(b, signal());
+  const foreign = [...s.containers.keys()].find(id => id !== late)!;
+  await assert.rejects(s.provider.adoptInvestigatedContainer(a, foreign, signal()), failed, 'another allocation\'s container fails inspection');
+  assert.ok(s.containers.has(foreign));
+  const receipt = await s.provider.adoptInvestigatedContainer(a, late!, signal());
+  assert.deepEqual(receipt, { ...a.handle, stopped: true, cacheAccessRevoked: true });
+  assert.equal(s.containers.has(late!), false);
+  assert.equal((await s.record(a))?.retired, true);
+  await assert.rejects(s.provider.adoptInvestigatedContainer(a, late!, signal()), failed, 'a retired record is not eligible again');
+  await s.leases.quarantine(a.binding, a.handle, 'provisioning_uncertain');
+  assert.equal((await s.leases.retire(a.binding, a.handle, receipt)).state, 'retired');
 });

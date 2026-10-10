@@ -68,4 +68,7 @@
 - **종료/회수**: 첫 재기동 때 래퍼 셸에 신호가 가서 node가 고아 프로세스로 남아 lease를 계속 갱신했다(유실 아님). 새로 만든 `local.mjs reconcile-worker`는 살아 있는 lease를 실제로 거부했다. node에 직접 SIGTERM을 보내자 2초 안에 worker 제거, lease `retired(shutdown)`, Docker 기록 `retired`. 2세대에서도 동일하게 재현했다. `serve`에 SIGHUP 처리를 추가했다.
 - **make check 종료 0**, 서버 **173/173**.
 - 장애 주입(절차 8): `scripts/verify-worker-recovery.mjs`가 실제 Docker·빌드 산출물 host·합성 OIDC·internal 네트워크로 **8/8**을 통과했다. SIGKILL 후 worker는 남지만 재시작해도 503이고, 살아 있는 lease는 reconcile이 거부한다. 65초 만료 후에도 재배정이 없고, reconcile 뒤에만 2세대가 배정되며, 정상 종료하면 회수된다. 남은 container 0. daemon 지연과 생성 도중 종료는 합성 테스트로만 확인했다.
+- daemon 지연 주입: `scripts/verify-worker-daemon-delay.mjs`(실제 Docker, CLI wrapper가 create를 client 포기 뒤 40초에 daemon에 전달) **5/5**. 21초에 503으로 실패했고, 늦은 container는 created 상태로만 남았다(시작·연결 없음). 재시도 없음, reconcile 거부. 테스트 정리 단계에서 수동 제거했다. 운영자가 조사 결과를 반영해 retire하는 도구 경로가 없다는 점이 새로 드러났다.
+- DynamoDB store local host: `verify:dynamodb-local`가 DynamoDB Local에서 적합성 9/9와 함께, 빌드된 local host를 `CLOUDOPS_DYNAMODB_STORE`로 기동해 membership bootstrap·OIDC 인증·연결 생성 200·재조회 1건을 확인했다.
+- 운영자 회수 경로: `DockerOrganizationWorkerProvisioner.adoptInvestigatedContainer`와 `reconcile-worker --investigated-container`를 추가했다. 합성 driver 테스트에서 fence 전·부재 ID·다른 allocation·retire 후 재시도를 거부하고, 정상 경로에서는 제거·retire·lease 회수를 확인했다. 실제 Docker daemon 지연 시나리오는 **7/7**(잘못된 ID 거부, 조사한 늦은 container 제거·retire, 잔여 0).
 
