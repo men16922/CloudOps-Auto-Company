@@ -43,7 +43,8 @@ async function fixture(t: TestContext, options: { schedule?: unknown; now?: () =
   const connections = new OrganizationConnections(store, access, transport, [config], options.now ?? (() => 1_800_000_000_000), cache, { schedule: options.schedule });
   t.after(async () => { await connections.close(); store.close(); await rm(directory, { recursive: true, force: true }); });
   const add = (value: InventoryUnit) => { const id = randomUUID(); units.set(id, value); job!.units.push({ id, accountId: value.accountId, region: value.region, service: value.service, count: value.items.length }); return id; };
-  return { connections, cache, directory, fetched, add, job: () => job!, fetchedJob: () => job, tamper: () => { tamper = true; },
+  const reconfigure = (change: Record<string, unknown>) => new OrganizationConnections(store, access, transport, [{ ...config, ...change }], options.now ?? (() => 1_800_000_000_000), cache);
+  return { connections, cache, directory, fetched, add, reconfigure, job: () => job!, fetchedJob: () => job, tamper: () => { tamper = true; },
     session: (token = 'valid-a') => access.authenticate(`Bearer ${token}`, config.organizationId, config.workspaceId) };
 }
 
@@ -176,4 +177,21 @@ test('scheduled sync runs on the live AWS session of the user after the interval
   await s.connections.perform(session, connection.id, { requestKey: randomUUID(), operation: 'logout' });
   const afterLogout = s.job().jobId; clock += 120 * 60_000; await s.connections.runSchedule();
   assert.equal(s.job().jobId, afterLogout, 'after AWS logout the scheduler starts nothing');
+});
+
+test('synced results stay with the user and payer configuration across a re-registered connection', async t => {
+  const s = await fixture(t), session = await s.session(), first = await s.connections.create(session, { configurationId: 'aws-read', requestKey: randomUUID() });
+  await s.connections.perform(session, first.id, { requestKey: randomUUID(), operation: 'sync' });
+  s.add(unit('111111111111', 'ap-northeast-2', 'ec2', ['payer-web'])); Object.assign(s.job(), { state: 'completed', finishedAt: new Date(1_800_000_000_000 - 60_000).toISOString() });
+  await s.connections.syncStatus(session, first.id);
+  // The operator changes the server scope: the old connection no longer matches and the user registers again.
+  const changed = s.reconfigure({ inventory: { maxAccounts: 10 } }); t.after(() => changed.close());
+  await assert.rejects(changed.observations(session, first.id), errorCode('connection_unavailable'));
+  const again = await changed.create(session, { configurationId: 'aws-read', requestKey: randomUUID() });
+  assert.notEqual(again.id, first.id);
+  const observations = await changed.observations(session, again.id) as { sync?: { connectionId: string; live: boolean; state: string } };
+  assert.deepEqual([observations.sync?.connectionId, observations.sync?.live, observations.sync?.state], [again.id, false, 'completed'], 'the last sync is shown without syncing again');
+  assert.equal((await changed.inventory(session, again.id, 'all')).units.length, 1);
+  assert.equal((await changed.report(session, again.id)).snapshots.length, 1);
+  await assert.rejects(changed.inventory(await s.session('valid-b'), again.id, 'all'), errorCode('connection_unavailable'), 'never another user');
 });

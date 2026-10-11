@@ -206,7 +206,7 @@ test('a changed trusted configuration retires the stale connection and registers
   assert.equal((await changed.create(session, { configurationId: 'aws-read', requestKey: randomUUID() })).id, second.id, 'the current connection is reused');
 });
 
-test('read results are cached per owned connection on local disk and re-validated before they are served', async t => {
+test('read results are cached per user and payer configuration on local disk and re-validated before they are served', async t => {
   const s = await fixture(t), session = await s.session(), other = await s.session('valid-b');
   const root = await mkdtemp(join(tmpdir(), 'cloudops-observations-')), cacheDir = join(root, 'observations');
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -224,5 +224,5 @@ test('read results are cached per owned connection on local disk and re-validate
   const changed = new OrganizationConnections(s.first, s.access, s.transport, [{ ...config, directory: { awsOrganizationId: 'o-synthetic1', parentId: 'r-demo' } }], Date.now, new FileObservationCache(cacheDir));
   await assert.rejects(changed.observations(session, connection.id), errorCode('connection_unavailable'));
   const next = await changed.create(session, { configurationId: 'aws-read', requestKey: randomUUID() });
-  assert.deepEqual(await changed.observations(session, next.id), { inventories: {} }, 'a changed binding never reuses the old cache entry');
+  assert.deepEqual((await changed.observations(session, next.id)).inventories, {}, 'single reads bound to the old connection and binding are never reused');
 });

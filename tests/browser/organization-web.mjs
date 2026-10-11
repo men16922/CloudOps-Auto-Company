@@ -164,7 +164,10 @@ try {
   expect(await devicePopup.evaluate(() => window.opener)).toBeNull(); await devicePopup.close();
   await expect(page.getByRole('link', { name: 'AWS 인증 페이지 열기 (코드 자동 입력)' })).toHaveAttribute('href', 'https://device.sso.us-east-1.amazonaws.com/?user_code=DEMO-CODE');
   await fetch(`${origin}/fixture/complete`);
-  // Connected: the first connection runs one sync; progress polling completes it and the dashboard reads the cached multi-account inventory.
+  // Connected: signing in never syncs by itself. The user presses Sync; progress polling completes it and the dashboard reads the cached inventory.
+  await expect(page.getByText('동기화 기록 없음', { exact: true })).toBeVisible({ timeout: 15_000 });
+  await page.waitForTimeout(500); expect(syncs.has('synthetic-user-a')).toBe(false);
+  await page.getByRole('button', { name: '동기화', exact: true }).click();
   await expect(page.getByText('일부 실패 포함 완료', { exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText(/계정 3 · 사용 리전 1 \(VPC 태그 기준\)/)).toBeVisible();
   await expect(page.getByText('조치 필요', { exact: true }).first()).toBeVisible();
@@ -296,7 +299,7 @@ try {
   await page.getByRole('button', { name: '웹 로그아웃', exact: true }).click(); await expect(page.getByRole('button', { name: '조직 웹 로그인', exact: true })).toBeVisible();
   await page.getByRole('combobox', { name: 'Language / 언어' }).selectOption('en'); await page.reload(); await expect(page.getByRole('button', { name: 'Sign in to organization', exact: true })).toBeVisible();
   expect(errors).toEqual([]); expect(await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).not.toContain('synthetic-user');
-  console.log('Organization web synthetic contract passed: sign-in, payer select, one-click device code with code-carrying link, first sync and progress, saved views, operations report (trend, new/resolved, exports), runbook request/approval/run, multi-account inventory with account/region columns, scope filter, search conditions, serverless tabs, Systems Manager, security posture, tag compliance, AWS Health, tagged-VPC region usage, derived status/findings/console links, scoped directory pages/OU navigation/expiry/lifecycle/filter/partial denial, user switch, membership revocation, logout and reload.');
+  console.log('Organization web synthetic contract passed: sign-in, payer select, one-click device code with code-carrying link, no sync on sign-in, manual sync and progress, saved views, operations report (trend, new/resolved, exports), runbook request/approval/run, multi-account inventory with account/region columns, scope filter, search conditions, serverless tabs, Systems Manager, security posture, tag compliance, AWS Health, tagged-VPC region usage, derived status/findings/console links, scoped directory pages/OU navigation/expiry/lifecycle/filter/partial denial, user switch, membership revocation, logout and reload.');
 } catch (error) {
   const page = browser?.contexts()[0]?.pages()[0];
   if (page) { const directory = process.env.CLOUDOPS_SCREENSHOT_DIR ?? 'test-results/screenshots'; await mkdir(directory, { recursive: true }); await page.screenshot({ path: join(directory, 'organization-web-failure.png'), fullPage: true }); console.error(await page.locator('body').ariaSnapshot()); }

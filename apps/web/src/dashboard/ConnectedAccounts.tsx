@@ -27,7 +27,6 @@ function ConnectionView({ controller, scope, view, viewHref, pageTitle }: { cont
   const [configuration, setConfiguration] = useState('');
   const popup = useRef<Window | null>(null);
   const [connectedId, setConnectedId] = useState<string>();
-  const refreshedFor = useRef<string | undefined>(undefined);
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   useEffect(() => { setSlot(document.getElementById('console-context-slot')); }, []);
   const selected = value.list.items.find(item => item.id === value.selectedId);
@@ -93,11 +92,7 @@ function ConnectionView({ controller, scope, view, viewHref, pageTitle }: { cont
   useEffect(() => {
     if (!selected && payer && !value.busy && value.list.items.some(item => item.configurationId === payer)) void controller.choosePayer(payer);
   }, [selected, payer, value.busy, value.list.items, controller]);
-  // The first connection without any cached sync starts one sync; afterwards syncing is the user's explicit action.
-  useEffect(() => {
-    if (status !== 'connected' || !selected || value.busy || value.error || value.sync || refreshedFor.current === selected.id) return;
-    refreshedFor.current = selected.id; void controller.perform({ operation: 'sync' });
-  }, [status, selected?.id, value.busy, value.error, value.sync, controller]);
+  // Syncing is always the user's explicit action (the Sync button); signing in only shows the results saved on the host disk.
   // The Root/OU directory page is read once per connection after a sync has finished (the worker serves one request at a time).
   const directoryFor = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -117,7 +112,7 @@ function ConnectionView({ controller, scope, view, viewHref, pageTitle }: { cont
       <KeyValuePairs columns={2} items={[{ label: t('웹 사용자', 'Web user'), value: value.identity.label }, { label: t('조직', 'Organization'), value: scope.label }]} />
       <Select ariaLabel={t('Payer 선택', 'Choose payer')} options={payers} selectedOption={payers.find(option => option.value === payer) ?? null} disabled={value.busy}
         placeholder={payers.length ? t('Payer를 선택하세요', 'Choose a payer') : t('허용된 Payer가 없습니다', 'No permitted payer')} empty={t('허용된 Payer가 없습니다', 'No permitted payer')}
-        onChange={({ detail }) => { const id = detail.selectedOption.value!; setConfiguration(id); refreshedFor.current = undefined; if (value.list.items.some(item => item.configurationId === id)) void controller.choosePayer(id); }} />
+        onChange={({ detail }) => { const id = detail.selectedOption.value!; setConfiguration(id); if (value.list.items.some(item => item.configurationId === id)) void controller.choosePayer(id); }} />
       {payerConfig ? <KeyValuePairs columns={2} items={[{ label: 'Payer', value: <span className="aws-account-id">{payerConfig.accountId}</span> }, { label: t('역할', 'Role'), value: payerConfig.roleName },
         { label: t('리전', 'Region'), value: payerConfig.region }, { label: t('AWS 접근', 'AWS access'), value: <StatusIndicator type={accessType}>{accessLabel}</StatusIndicator> }]} /> : null}
       <SpaceBetween direction="horizontal" size="xs">
@@ -143,7 +138,7 @@ function ConnectionView({ controller, scope, view, viewHref, pageTitle }: { cont
     {value.identity && !connected && !(value.status?.userCode && deviceLink) && value.error !== 'aws_session_required' ? payer
       ? <Alert type="info" header={t('AWS 로그인이 필요합니다', 'AWS sign-in required')} action={<Button variant="primary" loading={value.busy} onClick={startLogin}>{t('AWS Device Code 로그인', 'AWS Device Code sign-in')}</Button>}>
         {hasObservations ? t('지금은 마지막으로 저장된 결과만 표시합니다. ', 'Only the last saved results are shown. ') : t('아직 수집한 결과가 없습니다. ', 'Nothing has been collected yet. ')}
-        {value.sync ? t("로그인한 뒤 '동기화'로 새로 수집하세요.", 'After signing in, use Sync to collect again.') : t('로그인하면 첫 동기화가 자동으로 시작되고 결과는 호스트 디스크에 저장됩니다.', 'The first sync starts automatically after sign-in and results are saved on the host disk.')}</Alert>
+        {t("로그인한 뒤 '동기화'를 누르면 새로 수집해 호스트 디스크에 저장합니다. 다음부터는 저장된 결과를 바로 보여 줍니다.", 'After signing in, press Sync to collect and save to the host disk. Saved results are shown right away next time.')}</Alert>
       : <Container><SpaceBetween size="xs">
       <Box variant="h3">{t('연결된 Payer가 없습니다', 'No payer connected')}</Box>
       <Box color="text-body-secondary">{t('우측 상단 Payer 메뉴에서 Payer를 고르고 AWS Device Code로 로그인하세요. 연결되면 경보·자원·조직 상태를 읽어 옵니다.', 'Open the payer menu at the top right, choose a payer and sign in with AWS Device Code. Alarms, resources and organization state are read once connected.')}</Box>

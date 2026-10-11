@@ -181,7 +181,8 @@ export class OrganizationConnections {
   private async cachedSync(value: RecordValue) {
     const cached = await this.cache?.loadSync(this.cacheScope(value)).catch(() => undefined);
     const summary = cached ? syncSummarySchema.safeParse(cached.summary) : undefined;
-    return summary?.success && summary.data.connectionId === value.binding.connectionId ? { summary: { ...summary.data, live: false }, fetched: cached!.fetched } : undefined;
+    // A summary written by an earlier connection of the same configuration is shown as this connection's last (non-live) sync.
+    return summary?.success ? { summary: { ...summary.data, connectionId: value.binding.connectionId, live: false }, fetched: summary.data.connectionId === value.binding.connectionId ? cached!.fetched : [] } : undefined;
   }
   /** One bounded step of a running sync: finished units are fetched, verified and written to the disk cache. `check` rechecks
    * that the caller may still use the connection after every worker reply. Never starts a worker, login or sync. */
@@ -321,7 +322,9 @@ export class OrganizationConnections {
       return { items: next };
     });
   }
-  private cacheScope(value: RecordValue) { return [value.binding.organizationId, value.binding.workspaceId, value.binding.actorId, value.binding.connectionId, value.digest]; }
+  /** Results stay with the user and the payer configuration, so signing in again, re-registering the connection or changing the
+   * server scope keeps showing the last synced picture until the user syncs again (users never share an entry). */
+  private cacheScope(value: RecordValue) { return [value.binding.organizationId, value.binding.workspaceId, value.binding.actorId, value.configurationId]; }
   /** Owned connection only; cached values must still pass the same binding checks as fresh results. Never calls a worker. */
   async observations(session: OrganizationWebSession, id: string) {
     const value = await this.store.transact(tx => this.owned(tx, session, id));
