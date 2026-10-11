@@ -17,12 +17,13 @@
 - Identity Center SAML 웹 로그인 → Payer 연결 → Device Code 승인 → STS 확인 → 조회 → AWS 로그아웃 → 정상 종료 회수(2026-10-10).
 - 다계정 동기화(2026-10-11): 계정 1개 접근 확인, 리전 17곳 중 태그된 VPC 리전 1곳에서 서비스 16종 수집. 탭을 떠나도 호스트가 끝까지 수집. Security Hub·GuardDuty '사용 안 함', AWS Health '지원 플랜 필요' 상태 판정과 첫 리포트 기록.
 - 새로고침·재로그인 뒤 진행 중인 동기화가 멈춰 보이던 결함을 실사용에서 찾아 고쳤다.
+- AWS Config 집계자 모드 동기화 53초(직접 1분 45초와 같은 결과). 동기화는 버튼으로만, 결과 캐시는 사용자+Payer 설정 단위(재로그인·재등록에도 유지). 런북 실행·예약 동기화(서버 옵션, 로컬은 꺼 둠)는 구현했고 합성 검증만 했다.
 
 게이트: `make check` 종료 0, 단위·계약 219/219, 회사 smoke·조직 웹 합성 검증 통과. [지난 검증 기록](history/verification.md)
 
 ## 미검증·남음
 
-- 실제 계정: 두 번째 동기화 후 리포트 추이·신규/해결, 저장된 보기, Config 집계자 모드(Config 기록 필요, 소액 과금).
+- 실제 계정: 런북 요청→승인→실행(연결 점검) 실행 확인, 리포트 추이 화면, 저장된 보기(사용자 웹 로그인 필요). 로컬 Config 기록기·집계자는 켜 둔 상태(월 $1 미만, 원복 정보는 .data/aws-rollback).
 - 회사 측: 회사 Identity Center SAML 앱·실제 값, 운영 DynamoDB 테이블·IAM role·TLS/proxy, 회사 Linux 호스트 격리 재실행·장애 주입, 운영자 요구.
 
 대상은 조직 AWS뿐이며 개인 CLI/계정 데이터, GCP/On-Prem/Azure 구현, Firebase/Google SDK, Android를 포함하지 않는다.
