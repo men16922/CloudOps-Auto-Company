@@ -10,7 +10,7 @@ import { OrganizationWebAccess, identityActor } from '../../../apps/host/src/ide
 import { SqliteCloudStore } from '../../../apps/host/src/storage/sqlite-store';
 import { OrganizationConnections, type OrganizationWorkerTransport } from '../../../apps/host/src/connections/connections';
 import { OrganizationCliWorker } from '../../../apps/worker/src/cli-worker';
-import { createOrganizationApiServer } from '../../../apps/host/src';
+import { createOrganizationApiServer, RunbookService } from '../../../apps/host/src';
 import { CloudOperationError } from '../../../packages/contracts/errors';
 import { FileObservationCache } from '../../../apps/host/src/connections/observation-cache';
 import { readdir, stat } from 'node:fs/promises';
@@ -134,7 +134,7 @@ test('configuration changes and malformed worker responses never retarget a save
 });
 
 test('organization HTTP enforces Bearer membership and strict requests through the real registry/worker flow', async t => {
-  const s = await fixture(t, true); const services = { access: s.access, connections: s.connections, publicOrigin: 'http://127.0.0.1' };
+  const s = await fixture(t, true); const services = { access: s.access, connections: s.connections, runbooks: new RunbookService(s.first, s.connections), publicOrigin: 'http://127.0.0.1' };
   const server = createOrganizationApiServer(services); server.listen(0, '127.0.0.1'); await once(server, 'listening'); t.after(() => server.close());
   const address = server.address(); assert.ok(address && typeof address !== 'string'); const origin = `http://127.0.0.1:${address.port}`;
   services.publicOrigin = origin;
@@ -167,6 +167,12 @@ test('organization HTTP enforces Bearer membership and strict requests through t
   assert.deepEqual((await (await request(`/${connection.id}/views`)).json()).items.map((item: { view: { name: string } }) => item.view.name), ['Synthetic']);
   assert.equal((await request(`/${connection.id}/views`, { operation: 'save', view: { name: 'x', page: 'shell', accounts: [], regions: [], queries: {} } })).status, 400);
   assert.equal((await request(`/${connection.id}/views`, undefined, 'valid-b')).status, 404);
+  // Runbooks: owner-only state; a payer without runbooks refuses requests, and the browser never names documents or parameters.
+  const runbooks = await (await request(`/${connection.id}/runbooks`)).json(); assert.deepEqual([runbooks.enabled, runbooks.requests], [false, []]);
+  const refused = await request(`/${connection.id}/runbooks`, { operation: 'request', runbook: 'connectivity-check', target: { accountId: connection.accountId, region: connection.region }, reason: 'Synthetic check' });
+  assert.equal(refused.status, 409); assert.equal((await refused.json()).code, 'runbooks_not_configured');
+  assert.equal((await request(`/${connection.id}/runbooks`, { operation: 'request', runbook: 'connectivity-check', document: 'AWS-DeleteStack', target: { accountId: connection.accountId, region: connection.region }, reason: 'Synthetic' })).status, 400);
+  assert.equal((await request(`/${connection.id}/runbooks`, undefined, 'valid-b')).status, 404);
   const logout = await request(`/${connection.id}/actions`, { operation: 'logout' }); assert.equal(logout.status, 200);
   assert.equal((await (await request(`/${connection.id}/status`)).json()).status, 'disconnected');
   s.revokeIdentity(); assert.equal((await request(`/${connection.id}/status`)).status, 401);

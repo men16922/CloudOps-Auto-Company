@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { setImmediate as nextTurn } from 'node:timers/promises';
 import type { VerifiedCloudContext } from '../../../packages/contracts/access-context';
 import { CloudOperationError } from '../../../packages/contracts/errors';
-import { cliArguments, cliConfig, cliProfile, configExpression, type CliBinding, type CliOperation, type CliRuntime, type CliTarget, type DirectoryQuery, type ReadQuery } from '../../../packages/worker-protocol/cli-contract';
+import { cliArguments, cliConfig, cliProfile, configExpression, type CliBinding, type CliOperation, type CliRuntime, type CliTarget, type DirectoryQuery, type ReadQuery, type RunbookQuery } from '../../../packages/worker-protocol/cli-contract';
 import { OrganizationCliWorker } from '../../../apps/worker/src/cli-worker';
 import { configItem } from '../../../apps/worker/src/sync';
 
@@ -13,7 +13,7 @@ const base: CliBinding = { connectionId: '11111111-1111-4111-8111-111111111111',
 const context: VerifiedCloudContext = { actorId: base.actorId, owner: { kind: 'organization', organizationId: base.organizationId }, workspaceId: base.workspaceId, channel: 'web', roles: ['viewer'] };
 const identity = (account: string, session = 'actor-a') => JSON.stringify({ Account: account, Arn: `arn:aws:sts::${account}:assumed-role/AWSReservedSSO_ReadOnlyAccess_0123456789abcdef/${session}`, UserId: `AROA_SYNTHETIC:${session}` });
 const code = (expected: string) => (error: unknown) => error instanceof CloudOperationError && error.code === expected;
-type Call = { operation: CliOperation; input?: DirectoryQuery | ReadQuery; target?: CliTarget };
+type Call = { operation: CliOperation; input?: DirectoryQuery | ReadQuery | RunbookQuery; target?: CliTarget };
 type Responder = (call: Call) => unknown;
 function fixture(binding: CliBinding, respond: Responder) {
   const calls: Call[] = [];

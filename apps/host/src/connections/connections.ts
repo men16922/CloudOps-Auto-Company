@@ -11,16 +11,21 @@ import { reportSnapshotSchema, type ReportSnapshot } from '../../../../packages/
 import { savedViewCommandSchema, savedViewSchema, type SavedView } from '../../../../packages/contracts/aws/saved-views';
 import { bindingDigest, cliBindingSchema, cliReadSchema, type CliBinding } from '../../../../packages/worker-protocol/cli-contract';
 import { reportSnapshot, retainSnapshots } from './report-snapshots';
+import type { workerCommandSchema } from '../../../../packages/worker-protocol/commands';
 
 export const connectionConfigurationSchema = cliBindingSchema.omit({ actorId: true, connectionId: true }).extend({ configurationId: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/), label: z.string().min(1).max(128) }).strict();
 type Configuration = z.infer<typeof connectionConfigurationSchema>;
 const connectionActionSchema = z.object({ requestKey: z.uuid(), operation: z.enum(['login', 'verify', 'inspect', 'directory', 'disconnect', 'logout', 'sync']), service: cliReadSchema.optional(), cursor: z.uuid().optional() }).strict().refine(value => (value.operation === 'inspect' ? Boolean(value.service) : value.service === undefined) && (value.operation === 'directory' || value.cursor === undefined));
 type ConnectionAction = z.infer<typeof connectionActionSchema>;
+/** Scheduled sync on the user's own delegated AWS session (no shared or service credentials). */
+export const syncScheduleSchema = z.object({ syncEveryMinutes: z.number().int().min(30).max(1440) }).strict();
+type SyncSchedule = z.infer<typeof syncScheduleSchema>;
 type RecordValue = { binding: CliBinding; configurationId: string; digest: string; createdAt: string; enabled: boolean; activeRequest?: { key: string; deadline: number } };
 type RequestValue = { fingerprint: string; state: 'pending' | 'completed' | 'failed' | 'unknown'; result?: unknown; code?: string };
+type WorkerCommand = z.infer<typeof workerCommandSchema>;
 /** Authenticated private transport must bind a worker/lease to this exact immutable binding. */
 export interface OrganizationWorkerTransport {
-  invoke(binding: CliBinding, command: { id: string; operation: ConnectionAction['operation'] | 'status' | 'sync-status' | 'sync-unit'; service?: z.infer<typeof cliReadSchema>; cursor?: string; unit?: string }, signal: AbortSignal): Promise<{ ok: true; result: unknown } | { ok: false; code: string }>;
+  invoke(binding: CliBinding, command: WorkerCommand, signal: AbortSignal): Promise<{ ok: true; result: unknown } | { ok: false; code: string }>;
 }
 const unavailable = () => new CloudOperationError(404, 'connection_unavailable', 'The connection is not available.');
 const uncertain = () => new CloudOperationError(409, 'worker_request_uncertain', 'The worker result is unknown. Check the connection before starting a new request.');
@@ -70,8 +75,15 @@ export class OrganizationConnections {
   followIntervalMs = 3_000;
   private readonly followers = new Map<string, ReturnType<typeof setTimeout>>();
   private closed = false;
-  constructor(store: CloudStore, access: OrganizationWebAccess, transport: OrganizationWorkerTransport, configurations: unknown, now = Date.now, observations?: ObservationCache) {
+  /** Server setting: sync each connection on this interval while its user's AWS session (worker) is alive. */
+  private readonly schedule?: SyncSchedule;
+  /** Connections whose AWS session this process has seen connected; a scheduled sync never starts a worker or login. */
+  private readonly sessions = new Map<string, RecordValue>();
+  private scheduler?: ReturnType<typeof setInterval>;
+  constructor(store: CloudStore, access: OrganizationWebAccess, transport: OrganizationWorkerTransport, configurations: unknown, now = Date.now, observations?: ObservationCache, options: { schedule?: unknown } = {}) {
     this.store = store; this.access = access; this.transport = transport; this.now = now; this.cache = observations;
+    this.schedule = options.schedule === undefined ? undefined : syncScheduleSchema.parse(options.schedule);
+    if (this.schedule && this.cache) { this.scheduler = setInterval(() => { void this.runSchedule().catch(() => undefined); }, 60_000); this.scheduler.unref(); }
     this.configs = z.array(connectionConfigurationSchema).max(1000).parse(configurations);
     if (new Set(this.configs.map(value => JSON.stringify([value.organizationId, value.workspaceId, value.configurationId]))).size !== this.configs.length) throw new Error('Duplicate organization connection configuration');
   }
@@ -81,18 +93,21 @@ export class OrganizationConnections {
   }
   /** Trusted supervisor lifecycle checks only; this is not web authentication or a browser endpoint. */
   async workerAuthorization(input: unknown): Promise<{ revision: string }> {
-    const binding = cliBindingSchema.parse(input), expected = bindingDigest(binding);
-    return this.store.transact(async tx => {
-      const record = await tx.get<RecordValue>(recordKey(binding.connectionId));
-      const member = membershipSchema.safeParse(await tx.get(membershipKey(binding.organizationId, binding.workspaceId, binding.actorId)));
-      if (!record?.enabled || record.digest !== expected || bindingDigest(record.binding) !== expected || !member.success || !member.data.active
-        || member.data.actorId !== binding.actorId || member.data.organizationId !== binding.organizationId || member.data.workspaceId !== binding.workspaceId) throw unavailable();
-      const config = this.configs.find(value => value.configurationId === record.configurationId && value.organizationId === binding.organizationId && value.workspaceId === binding.workspaceId);
-      if (!config) throw unavailable();
-      const { configurationId: _, label: __, ...scope } = config;
-      if (bindingDigest({ ...scope, connectionId: binding.connectionId, actorId: binding.actorId }) !== expected) throw unavailable();
-      return { revision: digest({ binding: expected, version: member.data.version, roles: member.data.roles }) };
-    });
+    const binding = cliBindingSchema.parse(input);
+    return this.store.transact(async tx => (await this.authorized(tx, binding)).revision);
+  }
+  /** The stored connection, its owner's active membership and the server configuration still match this exact binding. */
+  private async authorized(tx: CloudTransaction, binding: CliBinding): Promise<{ record: RecordValue; revision: { revision: string } }> {
+    const expected = bindingDigest(binding);
+    const record = await tx.get<RecordValue>(recordKey(binding.connectionId));
+    const member = membershipSchema.safeParse(await tx.get(membershipKey(binding.organizationId, binding.workspaceId, binding.actorId)));
+    if (!record?.enabled || record.digest !== expected || bindingDigest(record.binding) !== expected || !member.success || !member.data.active
+      || member.data.actorId !== binding.actorId || member.data.organizationId !== binding.organizationId || member.data.workspaceId !== binding.workspaceId) throw unavailable();
+    const config = this.configs.find(value => value.configurationId === record.configurationId && value.organizationId === binding.organizationId && value.workspaceId === binding.workspaceId);
+    if (!config) throw unavailable();
+    const { configurationId: _, label: __, ...scope } = config;
+    if (bindingDigest({ ...scope, connectionId: binding.connectionId, actorId: binding.actorId }) !== expected) throw unavailable();
+    return { record, revision: { revision: digest({ binding: expected, version: member.data.version, roles: member.data.roles }) } };
   }
   private async invoke(binding: CliBinding, command: Parameters<OrganizationWorkerTransport['invoke']>[1]) {
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout> | undefined;
@@ -121,7 +136,7 @@ export class OrganizationConnections {
       const ids = await tx.get<string[]>(`connection-index:${digest(scope(session))}`) ?? [];
       const items = [];
       for (const id of ids) { try { items.push(this.view(await this.owned(tx, session, id))); } catch (error) { if (!(error instanceof CloudOperationError && error.status === 404)) throw error; } }
-      return { items, configurations: this.configs.filter(value => session.context.owner.kind === 'organization' && value.organizationId === session.context.owner.organizationId && value.workspaceId === session.context.workspaceId).map(value => ({ id: value.configurationId, label: value.label, accountId: value.accountId, roleName: value.roleName, region: value.region, ...(value.directory ? { directory: value.directory } : {}) })) };
+      return { items, ...(this.schedule ? { syncEveryMinutes: this.schedule.syncEveryMinutes } : {}), configurations: this.configs.filter(value => session.context.owner.kind === 'organization' && value.organizationId === session.context.owner.organizationId && value.workspaceId === session.context.workspaceId).map(value => ({ id: value.configurationId, label: value.label, accountId: value.accountId, roleName: value.roleName, region: value.region, ...(value.directory ? { directory: value.directory } : {}) })) };
     });
   }
   async create(session: OrganizationWebSession, input: unknown) {
@@ -225,8 +240,29 @@ export class OrganizationConnections {
     };
     schedule();
   }
-  /** Host shutdown: stop following syncs. */
-  async close() { this.closed = true; this.followers.forEach(timer => clearTimeout(timer)); this.followers.clear(); }
+  /** For other host services (runbooks): the owned connection, its configuration and cache scope. Never calls a worker. */
+  async ownedConnection(session: OrganizationWebSession, id: string) {
+    const value = await this.store.transact(tx => this.owned(tx, session, id));
+    return { binding: value.binding, configurationId: value.configurationId, scope: this.cacheScope(value) };
+  }
+  /** Cached inventory units of a cache scope (validated; for checking runbook targets against what the requester synced). */
+  async cachedUnits(scope: readonly string[]) {
+    return (await this.cache?.loadUnits(scope).catch(() => []) ?? []).flatMap(entry => { const unit = inventoryUnitSchema.safeParse(entry.unit); return unit.success && entry.key === unitKey(unit.data) ? [unit.data] : []; });
+  }
+  /** A worker call for another host service on a stored connection, rechecked like a heartbeat (record, membership, configuration). */
+  async workerCall(connectionId: string, command: WorkerCommand) {
+    const value = await this.store.transact(async tx => {
+      const record = await tx.get<RecordValue>(recordKey(z.uuid().parse(connectionId)));
+      if (!record) throw unavailable();
+      return (await this.authorized(tx, record.binding)).record;
+    });
+    let response: Awaited<ReturnType<OrganizationWorkerTransport['invoke']>>;
+    try { response = await this.invoke(value.binding, command); } catch (error) { if (error instanceof CloudOperationError && error.code === 'worker_request_uncertain') throw error; throw new CloudOperationError(503, 'worker_unavailable', 'The connection worker is unavailable.'); }
+    await this.store.transact(async tx => this.authorized(tx, value.binding));
+    return { binding: value.binding, response };
+  }
+  /** Host shutdown: stop the scheduler and following syncs. */
+  async close() { this.closed = true; if (this.scheduler) clearInterval(this.scheduler); this.followers.forEach(timer => clearTimeout(timer)); this.followers.clear(); }
   /** Cached units of one service (or `all`) across accounts/regions (owned connection only; never calls a worker). */
   async inventory(session: OrganizationWebSession, id: string, service: unknown) {
     const checkedService = service === 'all' ? 'all' as const : cliReadSchema.parse(service), value = await this.store.transact(tx => this.owned(tx, session, id));
@@ -307,12 +343,33 @@ export class OrganizationConnections {
     try { response = await this.invoke(value.binding, { id: randomUUID(), operation: 'status' }); } catch { throw new CloudOperationError(503, 'worker_unavailable', 'The connection worker is unavailable.'); }
     await this.store.transact(tx => this.owned(tx, session, id));
     if (!response.ok) throw new CloudOperationError(409, 'worker_unavailable', 'The connection worker is unavailable.');
-    try { return checkedResult(value.binding, 'status', response.result); } catch { throw new CloudOperationError(502, 'invalid_worker_result', 'The worker response could not be verified.'); }
+    let state: z.infer<typeof stateSchema>;
+    try { state = checkedResult(value.binding, 'status', response.result) as z.infer<typeof stateSchema>; } catch { throw new CloudOperationError(502, 'invalid_worker_result', 'The worker response could not be verified.'); }
+    this.remember(value, state.status);
+    return state;
+  }
+  private remember(value: RecordValue, status: string) {
+    if (status === 'connected') this.sessions.set(value.binding.connectionId, value); else this.sessions.delete(value.binding.connectionId);
+  }
+  /** One scheduler pass: start a sync for each connection with a live AWS session whose last sync is older than the interval.
+   * Each start rechecks the connection, membership and configuration and reserves the connection like a user request. */
+  async runSchedule() {
+    if (!this.schedule || this.closed) return;
+    for (const [id, value] of [...this.sessions]) {
+      const cached = await this.cachedSync(value), last = cached?.summary.finishedAt ?? cached?.summary.startedAt;
+      if (cached?.summary.state === 'running' || last && this.now() - Date.parse(last) < this.schedule.syncEveryMinutes * 60_000) continue;
+      try { await this.run(id, value.binding.actorId, { requestKey: randomUUID(), operation: 'sync' }, async tx => (await this.authorized(tx, value.binding)).record); }
+      catch (error) { if (!(error instanceof CloudOperationError && error.code === 'connection_busy')) this.sessions.delete(id); }
+    }
   }
   async perform(session: OrganizationWebSession, id: string, input: unknown) {
-    const command = connectionActionSchema.parse(input), key = `connection-request:${digest([id, session.identity.actorId, command.requestKey])}`, fingerprint = digest(command);
+    return this.run(id, session.identity.actorId, connectionActionSchema.parse(input), tx => this.owned(tx, session, id));
+  }
+  /** One reserved worker request on a connection. `check` re-authorizes the caller (web session, or the scheduler's binding check). */
+  private async run(id: string, actorId: string, command: ConnectionAction, check: (tx: CloudTransaction) => Promise<RecordValue>) {
+    const key = `connection-request:${digest([id, actorId, command.requestKey])}`, fingerprint = digest(command);
     const accepted = await this.store.transact(async tx => {
-      const connection = await this.owned(tx, session, id), prior = await tx.get<RequestValue>(key);
+      const connection = await check(tx), prior = await tx.get<RequestValue>(key);
       if (command.operation === 'directory' && !connection.binding.directory) throw new CloudOperationError(409, 'directory_not_configured', 'The organization directory scope is not configured.');
       if (prior) { if (prior.fingerprint !== fingerprint) throw new CloudOperationError(409, 'request_key_conflict', 'Use a new request identifier.'); return { connection, replay: prior }; }
       if (connection.activeRequest) {
@@ -336,7 +393,7 @@ export class OrganizationConnections {
       if (response.ok && command.operation === 'inspect' && (result as z.infer<typeof pageSchema>).operation !== command.service) throw uncertain();
       const failureCode = !response.ok && /^[a-z_]{1,64}$/.test(response.code) ? response.code : 'worker_rejected';
       await this.store.transact(async tx => {
-        const connection = await this.owned(tx, session, id), request = await tx.get<RequestValue>(key);
+        const connection = await check(tx), request = await tx.get<RequestValue>(key);
         if (connection.activeRequest?.key !== key || connection.activeRequest.deadline <= this.now() || request?.state !== 'pending') throw uncertain();
         const { activeRequest: _, ...rest } = connection;
         tx.put(key, response.ok ? { fingerprint, state: 'completed', result } : { fingerprint, state: 'failed', code: failureCode }); tx.put(recordKey(id), rest);
@@ -355,6 +412,8 @@ export class OrganizationConnections {
       }
       if (command.operation === 'sync') await this.cache?.saveSync(cacheScope, result, []).catch(() => undefined);
       if (command.operation === 'sync') this.follow(accepted.connection);
+      if (command.operation === 'login' || command.operation === 'verify') this.remember(accepted.connection, (result as z.infer<typeof stateSchema>).status);
+      if (command.operation === 'logout' || command.operation === 'disconnect') this.sessions.delete(id);
       return result;
     } catch (error) {
       await this.store.transact(async tx => {

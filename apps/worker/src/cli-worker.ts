@@ -2,13 +2,15 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { VerifiedCloudContext } from '../../../packages/contracts/access-context';
 import { CloudOperationError } from '../../../packages/contracts/errors';
-import { assertCliOwner, checkedCliIdentity, cliBindingSchema, cliFailure, cliReadSchema, DeviceInstructionParser, metricQueries, readQuerySchema, taggedResourceTypes, type CliBinding, type CliIdentity, type CliLoginState, type CliOperation, type CliRead, type CliRuntime, type CliTarget, type ReadQuery } from '../../../packages/worker-protocol/cli-contract';
+import { assertCliOwner, checkedCliIdentity, checkedRunbookIdentity, cliBindingSchema, cliFailure, cliReadSchema, cliTargetSchema, DeviceInstructionParser, metricQueries, readQuerySchema, taggedResourceTypes, type CliBinding, type CliIdentity, type CliLoginState, type CliOperation, type CliRead, type CliRuntime, type CliTarget, type ReadQuery, type RunbookQuery } from '../../../packages/worker-protocol/cli-contract';
 import { OrganizationSync, sessionCodes } from './sync';
 import { eksVersions, withEksSupport, type EksVersion } from './version-reads';
 import type { SyncJob } from '../../../packages/contracts/aws/inventory';
 import { OrganizationDirectory } from './directory-reads';
 import type { DirectorySnapshot } from '../../../packages/contracts/aws/directory';
 import { connectionItemSchema, connectionMetricIds } from '../../../packages/contracts/aws/connections';
+import { executionIdSchema, runbookExecutionSchema, type RunbookExecution } from '../../../packages/contracts/aws/runbooks';
+import { workerExecutionSchema, workerRunbookSchema } from '../../../packages/worker-protocol/commands';
 
 const itemSchema = connectionItemSchema.extend({ name: z.string().min(1).max(1024) });
 const pageSchema = z.object({ Items: z.array(itemSchema).max(100), HasMore: z.boolean() }).strict();
@@ -256,6 +258,53 @@ export class OrganizationCliWorker {
     const unit = this.sync?.units.get(id);
     if (!unit) throw cliFailure('sync_unit_not_found', 404);
     return { connectionId: this.binding.connectionId, jobId: this.sync!.job.jobId, unitId: id, unit: structuredClone(unit) };
+  }
+  /** Starts one catalog runbook on the runbook profile of an account this worker verified (the payer, or one the current sync confirmed). */
+  async runbookStart(context: VerifiedCloudContext, input: unknown): Promise<{ executionId: string }> {
+    const request = workerRunbookSchema.parse(input);
+    if (!this.binding.runbooks?.allowed.includes(request.id)) throw cliFailure('runbook_not_allowed', 403);
+    return this.runbookCall(context, request, async run => {
+      const reply = await run('automation-start', { kind: 'start', runbook: request.id, ...(request.instanceId ? { instanceId: request.instanceId } : {}) });
+      try { return z.object({ executionId: executionIdSchema }).strict().parse(JSON.parse(reply)); } catch { throw cliFailure('invalid_runbook_result'); }
+    });
+  }
+  /** Reads back an execution in the same account and region (status only; outputs are not collected). */
+  async runbookStatus(context: VerifiedCloudContext, input: unknown): Promise<RunbookExecution> {
+    const request = workerExecutionSchema.parse(input);
+    return this.runbookCall(context, request, async run => {
+      const reply = await run('automation-get', { kind: 'get', executionId: request.id });
+      try {
+        const value = z.object({ status: z.string(), startedAt: z.string().nullish(), endedAt: z.string().nullish(), failure: z.string().nullish() }).strict().parse(JSON.parse(reply));
+        const time = (raw?: string | null) => raw && !Number.isNaN(Date.parse(raw)) ? new Date(raw).toISOString() : undefined;
+        return runbookExecutionSchema.parse({ executionId: request.id, status: value.status, ...(time(value.startedAt) ? { startedAt: time(value.startedAt) } : {}),
+          ...(time(value.endedAt) ? { endedAt: time(value.endedAt) } : {}), ...(value.failure ? { failure: value.failure.slice(0, 300) } : {}) });
+      } catch { throw cliFailure('invalid_runbook_result'); }
+    });
+  }
+  /** The read session and the runbook session must be the same person, checked right before the call. A changed or expired session ends
+   * the AWS session; a denied runbook (permission, document) fails only this call. The host never retries a start with a lost reply. */
+  private async runbookCall<T>(context: VerifiedCloudContext, scope: { accountId: string; region: string }, task: (run: (operation: CliOperation, input?: RunbookQuery) => Promise<string>) => Promise<T>): Promise<T> {
+    assertCliOwner(context, this.binding); this.expire();
+    const pinned = this.identity;
+    if (!this.binding.runbooks) throw cliFailure('runbooks_not_configured', 409);
+    if (this.state.status !== 'connected' || !pinned) throw cliFailure('connection_unavailable', 401);
+    if (scope.accountId !== this.binding.accountId && !this.sync?.job.accounts.some(account => account.accountId === scope.accountId && account.access === 'verified')) throw cliFailure('runbook_account_out_of_scope', 403);
+    const target = cliTargetSchema.parse({ accountId: scope.accountId, region: scope.region }), { controller, generation } = this.claim(context);
+    const run = async (operation: CliOperation, query?: RunbookQuery) => { const result = await this.runtime.run(operation, controller.signal, undefined, query, target); this.current(generation, controller); return result.stdout; };
+    let result: { value: T } | undefined;
+    await this.track(controller, async () => {
+      try {
+        const before = checkedCliIdentity((await this.runtime.run('identity', controller.signal)).stdout, this.binding);
+        this.current(generation, controller); if (!sameIdentity(before, pinned)) throw cliFailure('identity_changed', 403);
+        checkedRunbookIdentity(await run('runbook-identity'), this.binding, scope.accountId, pinned);
+        result = { value: await task(run) };
+      } catch (error) {
+        if (!(error instanceof CloudOperationError) || error.code === 'identity_changed' || sessionCodes.has(error.code)) this.failure(error, generation);
+        throw error instanceof CloudOperationError ? error : cliFailure('runbook_failed');
+      }
+    });
+    if (!result) throw cliFailure('runbook_failed');
+    return result.value;
   }
   async directory(context: VerifiedCloudContext, cursor?: string): Promise<DirectorySnapshot> {
     assertCliOwner(context, this.binding); this.expire();

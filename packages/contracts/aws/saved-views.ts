@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const account = z.string().regex(/^\d{12}$/), region = z.string().regex(/^[a-z]{2}(?:-[a-z]+)+-\d$/);
 /** Pages of the organization AWS dashboard a saved view can open. */
-const dashboardPages = ['overview', 'report', 'ec2', 'eks', 'rds', 'elasticache', 'msk', 'serverless', 'ssm', 'lifecycle', 'alarms', 'metrics', 'security', 'tags', 'health', 'accounts'] as const;
+const dashboardPages = ['overview', 'report', 'ec2', 'eks', 'rds', 'elasticache', 'msk', 'serverless', 'ssm', 'runbooks', 'lifecycle', 'alarms', 'metrics', 'security', 'tags', 'health', 'accounts'] as const;
 const tokenSchema = z.object({ propertyKey: z.string().regex(/^[a-z][a-z0-9]{0,31}$/).optional(), operator: z.enum(['=', '!=', ':', '!:']), value: z.string().max(128) }).strict();
 /** Search conditions of one table (PropertyFilter query without free-form extras). */
 const savedQuerySchema = z.object({ operation: z.enum(['and', 'or']), tokens: z.array(tokenSchema).max(10) }).strict();

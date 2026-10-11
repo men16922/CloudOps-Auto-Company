@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import Alert from '@cloudscape-design/components/alert';
 import Button from '@cloudscape-design/components/button';
@@ -74,6 +74,7 @@ function ConnectionView({ controller, scope, view, viewHref, pageTitle }: { cont
   }, [status, selected?.id]);
   const connected = status === 'connected' || (status === undefined && Boolean(selected) && connectedId === selected?.id);
   const deviceLink = value.status?.verificationUriComplete ?? value.status?.verificationUri;
+  const refreshRunbooks = useCallback(() => { void controller.loadRunbooks(); }, [controller]);
   const hasObservations = Boolean(value.directory || Object.keys(value.units).length || value.sync);
   // One click opens a blank window synchronously (no popup blocker) and later points it at the code-carrying AWS page.
   const startLogin = () => {
@@ -153,7 +154,8 @@ function ConnectionView({ controller, scope, view, viewHref, pageTitle }: { cont
       <p>{t('열린 AWS 페이지의 코드가 위 코드와 같은지 확인한 뒤 허용을 누르세요. 비밀번호와 MFA는 AWS 또는 회사 로그인 화면에서 직접 입력합니다.', 'Check that the code on the AWS page matches the code above, then allow access. Enter your password and MFA only on the AWS or company sign-in page.')}</p></SpaceBetween></Alert> : null}
     {selected && (connected || hasObservations) ? <OperationsDashboard view={view} viewHref={viewHref} pageTitle={pageTitle} connected={connected} busy={value.busy}
       report={value.report} views={value.views} onSaveView={view => controller.saveView(view)} onDeleteView={id => controller.deleteView(id)}
-      portal={selected.startUrl ? { startUrl: selected.startUrl, roleName: selected.roleName } : undefined} requiredTags={selected.requiredTags} sync={value.sync} units={value.units}
+      runbooks={value.runbooks} onRunbookCommand={command => controller.runbookCommand(command)} onRefreshRunbooks={refreshRunbooks} payer={{ accountId: selected.accountId, region: selected.region }}
+      portal={selected.startUrl ? { startUrl: selected.startUrl, roleName: selected.roleName } : undefined} requiredTags={selected.requiredTags} sync={value.sync} syncEveryMinutes={value.list.syncEveryMinutes} units={value.units}
       directory={value.directory} hasDirectoryScope={Boolean(selected.directory)} onSync={() => void controller.perform({ operation: 'sync' })}
       onReadDirectory={() => void controller.perform({ operation: 'directory' })} onNavigate={cursor => void controller.perform({ operation: 'directory', cursor })} /> : null}
   </SpaceBetween>;

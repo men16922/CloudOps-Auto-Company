@@ -3,7 +3,8 @@ import { OrganizationWebAccess, type WebIdentityVerifier } from '../identity/web
 import type { CloudStore } from '../storage/store';
 import type { ObservationCache } from '../connections/observation-cache';
 import { webConfigurationSchema } from '../../../../packages/contracts/web-config';
-import { connectionConfigurationSchema } from '../connections/connections';
+import { connectionConfigurationSchema, syncScheduleSchema } from '../connections/connections';
+import { runbookPolicySchema } from '../runbooks/runbooks';
 import { createOrganizationWorkerRuntime, type OrganizationWorkerProvisioner } from '../workers/supervisor';
 import { createOrganizationApiServer, organizationHttpServer, organizationRequestListener } from './routes';
 import { createSamlBridge, samlBridgeConfigSchema } from '../identity/saml-bridge';
@@ -24,6 +25,10 @@ export const organizationDeploymentSchema = z.object({
   connections: z.array(connectionConfigurationSchema).max(1000),
   /** Web sign-in through an IAM Identity Center SAML 2.0 application; server-only, never sent to the browser. */
   samlBridge: samlBridgeConfigSchema.optional(),
+  /** Scheduled sync while each user's own AWS session is alive (no shared credentials). */
+  schedule: syncScheduleSchema.optional(),
+  /** Runbook approval policy (two-person by default). Which runbooks a payer allows lives in its connection's `runbooks`. */
+  runbookPolicy: runbookPolicySchema.optional(),
 }).strict().superRefine((value, context) => {
   if (value.samlBridge && (!value.web.configured || value.web.identity.oidc)) {
     context.addIssue({ code: 'custom', path: ['samlBridge'], message: 'The SAML bridge needs a configured company web identity without explicit oidc settings.' });
@@ -65,9 +70,9 @@ export function composeOrganizationApi(options: OrganizationCompositionOptions) 
       async close() { await new Promise<void>(resolve => server.close(() => resolve())); } };
   }
   const access = new OrganizationWebAccess(verifier, options.store, options.now);
-  const runtime = createOrganizationWorkerRuntime({ store: options.store, access, configurations: deployment.connections, provisioner: options.provisioner, now: options.now, observations: options.observations });
+  const runtime = createOrganizationWorkerRuntime({ store: options.store, access, configurations: deployment.connections, provisioner: options.provisioner, now: options.now, observations: options.observations, schedule: deployment.schedule, runbookPolicy: deployment.runbookPolicy });
   const web = bridge && deployment.web.configured ? { ...deployment.web, identity: { method: 'company' as const, oidc: bridge.browserOidc } } : deployment.web;
-  const services = { access, connections: runtime.connections, publicOrigin: deployment.publicOrigin, web };
+  const services = { access, connections: runtime.connections, runbooks: runtime.runbooks, publicOrigin: deployment.publicOrigin, web };
   const api = organizationRequestListener(services);
   const listener: typeof api = (request, response) => {
     if (bridge && (request.url ?? '').startsWith('/api/organizations/saml/')) { void bridge.handle(request, response); return; }
@@ -77,6 +82,7 @@ export function composeOrganizationApi(options: OrganizationCompositionOptions) 
   return { deployment, configured: true as const, server, listener, access, runtime, bridge,
     async close() {
       await new Promise<void>(resolve => server.close(() => resolve()));
+      runtime.runbooks.close();
       await runtime.connections.close();
       await runtime.supervisor.close();
     } };

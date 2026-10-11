@@ -8,9 +8,11 @@
 - 회사 인증은 Frontend → Backend → AWS CLI Device Code 경계를 유지한다. 현재 구현은 TypeScript/Node이며 Flask 서비스로 표현하지 않는다. 웹의 `WebIdentityClient`와 서버 `WebIdentityVerifier`는 회사가 선택한 인증 adapter를 별도로 주입한다. AWS Device Code token은 웹 신원이 아니다.
 - 사용자별 프로필·sso-session·실제 홈/캐시·실행 환경을 분리한다. 공용 홈/캐시·요청별 전역 AWS_PROFILE 변경·개발자의 개인 CLI/키 승계는 금지한다. private pipe를 브라우저에 공개하지 않는다.
 - 서버의 현재 웹 신원·조직/workspace membership·역할·connection owner를 매번 검사한다. OU/Payer 선택과 로그인 성공을 하위 계정 권한 부여로 취급하지 않는다. 클라이언트 context/actor/profile/endpoint/명령을 실행 입력으로 받지 않는다.
-- 서버 고정 계정·역할·리전·조회 API만 수행한다. 전후 STS/대상·binding digest·lease 세대를 확인하고 늦은 사용자 응답을 버린다. Organizations는 지정 범위의 직접 자식 한 페이지씩 조회하며 10분 worker cursor만 받는다. State 미수집은 UNKNOWN이다.
-- 동기화(2026-10-11 사용자 결정)는 사용자 전용 worker가 서버에 설정된 Organizations 범위의 계정(상한)과 활성/설정 리전만 대상으로 한다. 계정마다 같은 Identity Center 사용자인지 STS로 전후 확인하고, 태그된 VPC가 있는 리전만 사용 리전으로 본다. 결과는 호스트의 사용자별 디스크 캐시로만 전달한다. 브라우저의 디렉터리 탐색은 위 cursor 규칙을 그대로 따른다. 쓰기(런북 실행)는 별도 승인 전까지 추가하지 않는다.
+- 서버 고정 계정·역할·리전·조회 API를 수행하고, AWS 자원을 바꾸는 일은 아래 런북 규칙으로만 한다. 전후 STS/대상·binding digest·lease 세대를 확인하고 늦은 사용자 응답을 버린다. Organizations는 지정 범위의 직접 자식 한 페이지씩 조회하며 10분 worker cursor만 받는다. State 미수집은 UNKNOWN이다.
+- 동기화(2026-10-11 사용자 결정)는 사용자 전용 worker가 서버에 설정된 Organizations 범위의 계정(상한)과 활성/설정 리전만 대상으로 한다. 계정마다 같은 Identity Center 사용자인지 STS로 전후 확인하고, 태그된 VPC가 있는 리전만 사용 리전으로 본다. 결과는 호스트의 사용자별 디스크 캐시로만 전달한다. 브라우저의 디렉터리 탐색은 위 cursor 규칙을 그대로 따른다.
 - 알림(2026-10-11 사용자 결정): 메일·Slack 등 외부 알림 기능은 두지 않는다(구현 후 제거). 동기화를 시작한 뒤 결과 수집은 호스트가 이어서 하며 worker 생성·로그인은 하지 않는다.
+- 런북 실행(2026-10-11 사용자 승인): 서버 고정 카탈로그(`packages/contracts/aws/runbooks.ts`, 문서·파라미터 고정)와 연결별 `runbooks`(런북 전용 permission set·허용 목록)만 쓴다. 대상은 요청자 동기화 결과에 있는 자원이다. 요청(사유) → reviewer 역할의 다른 구성원 승인(본인 승인은 서버 정책 `runbookPolicy.allowSelfApproval`로만) → 요청자 본인 AWS 세션의 런북 프로필로 실행한다. 조회 역할로 실행하지 않고, 실행 전 조회·런북 세션이 같은 사람인지 확인한다. 시작 응답을 잃으면 재시도하지 않고 unknown으로 둔다. 요청 기록은 불변 감사 저장소가 아니다.
+- 예약 동기화(2026-10-11 사용자 결정): 사용자 본인의 AWS 세션(worker)이 살아 있는 동안만 서버 설정(`schedule.syncEveryMinutes`) 주기로 동기화한다. 공용·서비스 자격으로 무인 수집하지 않는다(회사 배포 단계의 별도 설계 과제).
 - 상태/재시도/새로고침으로 worker를 생성하거나 로그인을 시작하지 않는다. 미확인 dispatch/생성은 자동 재전송하지 않는다. worker 종료와 캐시 접근 차단의 확인 없이는 새 세대를 배정하지 않는다. 물리 격리·실제 회사 SSO는 별도 검증이다.
 - 저장 transaction의 재시도 콜백에는 외부 호출을 넣지 않는다. SQLite는 로컬 테스트 adapter이고 회사 운영 저장소 선택은 남았다. 해시 연결을 불변 감사 저장소로 표현하지 않는다.
 - 회사 설정·키·SSO token·실제 계정 관측·.env·.data를 Git/브라우저 저장소/로그/보고서에 넣지 않는다. 테스트/캡처에는 합성 데이터만 사용한다.

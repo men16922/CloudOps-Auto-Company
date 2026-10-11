@@ -5,7 +5,7 @@ CloudOps Auto Company는 **조직 AWS 계정 운영** 하나만 담당한다. �
 ```
 apps/
   web/       브라우저 화면 (React + Cloudscape)
-  host/      API 서버: 웹 로그인 확인, 연결·저장소, worker 관리, 결과 캐시·리포트 기록
+  host/      API 서버: 웹 로그인 확인, 연결·저장소, worker 관리, 결과 캐시·리포트 기록, 예약 동기화, 런북 승인·실행
   worker/    사용자별 Docker 컨테이너 안에서 AWS CLI로 읽기 전용 조회를 하는 수집기
 packages/
   contracts/        웹과 호스트가 주고받는 데이터 형식(zod), 오류 형식, 웹 설정 형식
@@ -41,7 +41,8 @@ packages/worker-protocol ─► packages/contracts
 1. **웹 로그인:** 브라우저 → `apps/host/src/identity/` (IAM Identity Center SAML 또는 OIDC) → 호스트가 발급한 웹 신원. AWS Device Code token은 웹 신원이 아니다.
 2. **AWS 연결:** 브라우저가 Payer를 고르고 로그인을 누르면 `apps/host/src/connections/connections.ts`가 요청을 기록하고, `apps/host/src/workers/supervisor.ts`가 사용자 전용 worker 컨테이너(`workers/docker/`)를 띄운다. worker(`apps/worker/src/cli-worker.ts`)가 AWS CLI Device Code 로그인을 하고 사용자가 브라우저에서 승인한다.
 3. **동기화:** worker가 Organizations 범위의 계정과 태그된 VPC가 있는 리전을 읽고(`apps/worker/src/sync.ts`), 호스트가 끝난 결과를 검증해 사용자별 디스크 캐시(`connections/observation-cache.ts`)에 저장한다. 브라우저가 떠나도 호스트가 끝까지 가져온다.
-4. **판정·리포트:** 화면과 호스트가 `packages/assessment`의 같은 규칙으로 판정한다. 동기화가 끝날 때마다 호스트가 판정을 기록한다(`connections/report-snapshots.ts`).
+4. **판정·리포트:** 화면과 호스트가 `packages/assessment`의 같은 규칙으로 판정한다. 동기화가 끝날 때마다 호스트가 판정을 기록한다(`connections/report-snapshots.ts`). 서버 예약 주기가 있으면 사용자 세션이 살아 있는 동안 호스트가 자동으로 동기화한다.
+5. **런북 실행:** 요청·승인·실행 흐름은 `apps/host/src/runbooks/runbooks.ts`, worker의 실행·상태 읽기는 `apps/worker/src/cli-worker.ts`(런북 프로필과 신원 확인은 `packages/worker-protocol/cli-contract.ts`). 카탈로그는 `packages/contracts/aws/runbooks.ts`.
 
 ## 빌드 산출물 (`make check`가 만든다, Git 제외)
 

@@ -2,6 +2,7 @@ export { createOrganizationApiServer } from './api/routes';
 export { composeOrganizationApi, organizationDeploymentSchema, publicOriginSchema } from './api/deployment';
 export type { OrganizationCompositionOptions, OrganizationDeployment } from './api/deployment';
 export { OrganizationConnections } from './connections/connections';
+export { RunbookService, runbookPolicySchema } from './runbooks/runbooks';
 export { OrganizationWorkerRouter } from './workers/router';
 export { OrganizationWorkerLeases, workerLeaseHandle } from './workers/leases';
 export type { WorkerLease, WorkerLeaseReason, WorkerReadyReceipt, WorkerRetirementReceipt } from './workers/leases';

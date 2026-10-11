@@ -4,6 +4,7 @@ import { CloudOperationError } from '../contracts/errors';
 import type { VerifiedCloudContext } from '../contracts/access-context';
 import { directoryScopeSchema, directoryParentId } from '../contracts/aws/directory';
 import { connectionMetricIds, connectionServices, requiredTagsSchema } from '../contracts/aws/connections';
+import { executionIdSchema, runbookCatalog, runbookIdSchema } from '../contracts/aws/runbooks';
 
 const id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/);
 const region = z.string().regex(/^(us|eu|ap|ca|sa|af|me|il|mx)-(east|west|central|north|south|northeast|northwest|southeast|southwest)-[1-9]$/);
@@ -23,13 +24,16 @@ export const cliBindingSchema = z.object({
   inventory: z.object({ regions: z.array(region).min(1).max(30).optional(), maxAccounts: z.number().int().min(1).max(200).optional(),
     config: z.object({ aggregator: z.string().regex(/^[\w-]{1,256}$/), accountId: z.string().regex(/^\d{12}$/), region }).strict().optional(),
     requiredTags: requiredTagsSchema.optional() }).strict().optional(),
+  /** Server-fixed runbook execution: a separate permission set (never the read role) and the catalog entries allowed for this payer. */
+  runbooks: z.object({ roleName: z.string().regex(/^[\w+=,.@-]{1,64}$/), allowed: z.array(runbookIdSchema).min(1).max(4) }).strict().optional(),
 }).strict();
 export type CliBinding = z.infer<typeof cliBindingSchema>;
 export const cliReadSchema = z.enum(connectionServices);
 export type CliRead = z.infer<typeof cliReadSchema>;
 export type CliOperation = 'login' | 'identity' | 'logout' | CliRead | 'eks-versions' | 'eks-cluster' | 'rds-lifecycle' | 'kafka-versions' | 'regions' | 'vpcs' | 'apigateway-rest' | 'apigateway-http' | 'config-query'
   | 'guardduty-detectors' | 'guardduty-findings' | 'guardduty-details' | 'tagged-resources'
-  | 'directory-organization' | 'directory-parent' | 'directory-accounts' | 'directory-ous' | 'directory-ancestors' | 'directory-all-accounts';
+  | 'directory-organization' | 'directory-parent' | 'directory-accounts' | 'directory-ous' | 'directory-ancestors' | 'directory-all-accounts'
+  | 'runbook-identity' | 'automation-start' | 'automation-get';
 /** Internal only: an account/region chosen by the worker from the fixed scope (Organizations under the configured parent, enabled or configured regions). */
 export const cliTargetSchema = z.object({ accountId: z.string().regex(/^\d{12}$/), region }).strict();
 export type CliTarget = z.infer<typeof cliTargetSchema>;
@@ -77,6 +81,12 @@ export const readQuerySchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('tags'), resourceType: z.enum(taggedResourceTypes) }).strict(),
 ]);
 export type ReadQuery = z.infer<typeof readQuerySchema>;
+/** Internal only: the runbook comes from the server catalog, the instance from the requester's synced inventory, the execution ID from this worker's own start. */
+export const runbookQuerySchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('start'), runbook: runbookIdSchema, instanceId: z.string().regex(/^i-[a-f0-9]{8,17}$/).optional() }).strict(),
+  z.object({ kind: z.literal('get'), executionId: executionIdSchema }).strict(),
+]);
+export type RunbookQuery = z.infer<typeof runbookQuerySchema>;
 /** Internal only: values come from this worker's expiring directory grants. */
 const directoryQuerySchema = z.object({ parentId: directoryParentId, nextToken: z.string().min(1).max(100000).optional() }).strict();
 export type DirectoryQuery = z.infer<typeof directoryQuerySchema>;
@@ -91,7 +101,7 @@ export type CliLoginState = {
 };
 type CliResult = { stdout: string };
 export interface CliRuntime {
-  run(operation: CliOperation, signal: AbortSignal, output?: (chunk: string) => void, input?: DirectoryQuery | ReadQuery, target?: CliTarget): Promise<CliResult>;
+  run(operation: CliOperation, signal: AbortSignal, output?: (chunk: string) => void, input?: DirectoryQuery | ReadQuery | RunbookQuery, target?: CliTarget): Promise<CliResult>;
 }
 export function cliFailure(code = 'cli_failed', status = 502) {
   return new CloudOperationError(status, code, 'The organization CLI operation could not be confirmed.');
@@ -101,7 +111,10 @@ export function assertCliOwner(context: VerifiedCloudContext, binding: CliBindin
     || context.actorId !== binding.actorId || context.workspaceId !== binding.workspaceId || context.channel !== 'web'
     || !context.roles.some(role => ['viewer', 'operator', 'reviewer'].includes(role))) throw cliFailure('connection_unavailable', 403);
 }
-export function cliProfile(binding: CliBinding, accountId?: string) { return accountId && accountId !== binding.accountId ? `cloudops-${binding.connectionId}-a${accountId}` : `cloudops-${binding.connectionId}`; }
+export function cliProfile(binding: CliBinding, accountId?: string, purpose?: 'runbook') {
+  const base = accountId && accountId !== binding.accountId ? `cloudops-${binding.connectionId}-a${accountId}` : `cloudops-${binding.connectionId}`;
+  return purpose ? `${base}-${purpose}` : base;
+}
 export function bindingDigest(binding: CliBinding) {
   // Schema order is fixed, independent of the original JSON field order.
   return createHash('sha256').update(JSON.stringify(cliBindingSchema.parse(binding))).digest('hex');
@@ -109,12 +122,16 @@ export function bindingDigest(binding: CliBinding) {
 /** The same SSO session and role name; an extra profile per target account (Identity Center decides whether it is assigned). */
 export function cliConfig(binding: CliBinding, accountId?: string) {
   const b = cliBindingSchema.parse(binding), profile = cliProfile(b), target = accountId === undefined ? undefined : cliTargetSchema.shape.accountId.parse(accountId);
-  const section = (name: string, account: string) => `[profile ${name}]\nsso_session = ${profile}\nsso_account_id = ${account}\nsso_role_name = ${b.roleName}\nregion = ${b.region}\noutput = json\n`;
-  return `[sso-session ${profile}]\nsso_start_url = ${b.startUrl}\nsso_region = ${b.ssoRegion}\nsso_registration_scopes = sso:account:access\n\n${section(profile, b.accountId)}${target && target !== b.accountId ? `\n${section(cliProfile(b, target), target)}` : ''}`;
+  const section = (name: string, account: string, role = b.roleName) => `[profile ${name}]\nsso_session = ${profile}\nsso_account_id = ${account}\nsso_role_name = ${role}\nregion = ${b.region}\noutput = json\n`;
+  const other = target && target !== b.accountId ? target : undefined;
+  // Runbook profiles use the separate execution permission set on the same SSO session; reads never use them.
+  const runbook = b.runbooks ? `\n${section(cliProfile(b, undefined, 'runbook'), b.accountId, b.runbooks.roleName)}${other ? `\n${section(cliProfile(b, other, 'runbook'), other, b.runbooks.roleName)}` : ''}` : '';
+  return `[sso-session ${profile}]\nsso_start_url = ${b.startUrl}\nsso_region = ${b.ssoRegion}\nsso_registration_scopes = sso:account:access\n\n${section(profile, b.accountId)}${other ? `\n${section(cliProfile(b, other), other)}` : ''}${runbook}`;
 }
 /** Each caller gets fixed arguments; there is no generic command/endpoint/profile input. */
-export function cliArguments(binding: CliBinding, operation: CliOperation, input?: DirectoryQuery | ReadQuery, inputTarget?: CliTarget): string[] {
+export function cliArguments(binding: CliBinding, operation: CliOperation, input?: DirectoryQuery | ReadQuery | RunbookQuery, inputTarget?: CliTarget): string[] {
   const target = inputTarget === undefined ? undefined : cliTargetSchema.parse(inputTarget);
+  if (operation === 'runbook-identity' || operation === 'automation-start' || operation === 'automation-get') return runbookArguments(binding, operation, input, target);
   if (target && (operation.startsWith('directory-') || ['login', 'logout', 'config-query'].includes(operation))) throw cliFailure('invalid_read_query');
   const common = ['--profile', cliProfile(binding, target?.accountId), '--region', target?.region ?? binding.region, '--no-cli-pager', '--no-cli-auto-prompt', '--color', 'off'];
   if (operation.startsWith('directory-')) {
@@ -225,6 +242,36 @@ export function checkedCliIdentity(raw: string, binding: CliBinding): CliIdentit
   if (value.Account !== binding.accountId || !value.Arn.startsWith(prefix)
     || !/^[a-fA-F0-9]{16}\/[A-Za-z0-9+=,.@_-]{1,64}$/.test(value.Arn.slice(prefix.length))) throw cliFailure('identity_mismatch', 403);
   return { accountId: value.Account, arn: value.Arn, userId: value.UserId };
+}
+
+/** Runbook commands always use the runbook profile of the target account; documents and parameters come only from the catalog. */
+function runbookArguments(binding: CliBinding, operation: 'runbook-identity' | 'automation-start' | 'automation-get', input: unknown, target?: CliTarget): string[] {
+  const runbooks = binding.runbooks;
+  if (!runbooks) throw cliFailure('runbooks_not_configured', 409);
+  if (!target) throw cliFailure('invalid_runbook_query');
+  const common = ['--profile', cliProfile(binding, target.accountId, 'runbook'), '--region', target.region, '--output', 'json', '--no-cli-pager', '--no-cli-auto-prompt', '--color', 'off'];
+  if (operation === 'runbook-identity') return ['sts', 'get-caller-identity', ...common];
+  const query = runbookQuerySchema.parse(input);
+  if (query.kind === 'start' && operation === 'automation-start') {
+    if (!runbooks.allowed.includes(query.runbook)) throw cliFailure('runbook_not_allowed', 403);
+    const entry = runbookCatalog[query.runbook];
+    if ((entry.target === 'ec2-instance') !== Boolean(query.instanceId)) throw cliFailure('invalid_runbook_target');
+    return ['ssm', 'start-automation-execution', '--document-name', entry.document, '--cli-input-json', JSON.stringify({ Parameters: entry.target === 'ec2-instance' ? { InstanceId: [query.instanceId] } : {} }),
+      '--query', '{executionId:AutomationExecutionId}', ...common];
+  }
+  if (query.kind === 'get' && operation === 'automation-get') {
+    return ['ssm', 'get-automation-execution', '--automation-execution-id', query.executionId,
+      '--query', 'AutomationExecution.{status:AutomationExecutionStatus,startedAt:ExecutionStartTime,endedAt:ExecutionEndTime,failure:FailureMessage}', ...common];
+  }
+  throw cliFailure('invalid_runbook_query');
+}
+/** The runbook profile must be the same person (Identity Center user) on the runbook permission set of the target account. */
+export function checkedRunbookIdentity(raw: string, binding: CliBinding, accountId: string, pinned: CliIdentity) {
+  let value: z.infer<typeof identitySchema>;
+  try { value = identitySchema.parse(JSON.parse(raw)); } catch { throw cliFailure('invalid_identity'); }
+  const prefix = `arn:aws:sts::${accountId}:assumed-role/AWSReservedSSO_${binding.runbooks?.roleName ?? ''}_`, person = (arn: string) => arn.split('/').at(-1);
+  if (!binding.runbooks || value.Account !== accountId || !value.Arn.startsWith(prefix) || !/^[a-fA-F0-9]{16}\/[A-Za-z0-9+=,.@_-]{1,64}$/.test(value.Arn.slice(prefix.length))
+    || person(value.Arn) !== person(pinned.arn)) throw cliFailure('runbook_identity_mismatch', 403);
 }
 
 /** Parser for AWS CLI 2 device instructions. Unknown output fails closed at process completion. */

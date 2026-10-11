@@ -9,6 +9,7 @@ import type { CloudStore } from '../storage/store';
 import type { ObservationCache } from '../connections/observation-cache';
 import type { OrganizationWebAccess } from '../identity/web-access';
 import { OrganizationWorkerRouter } from './router';
+import { RunbookService } from '../runbooks/runbooks';
 import { OrganizationWorkerLeases, workerLeaseHandle, workerReadyReceiptSchema, type WorkerLeaseReason, type WorkerReadyReceipt, type WorkerRetirementReceipt } from './leases';
 import { workerLeaseHandleSchema, type WorkerLeaseHandle } from '../../../../packages/worker-protocol/lease-handle';
 
@@ -195,12 +196,13 @@ export class OrganizationWorkerSupervisor implements OrganizationWorkerTransport
 
 /** Company composition: identity/store are supplied by the host; no provider SDK or infrastructure default. */
 export function createOrganizationWorkerRuntime(options: { store: CloudStore; access: OrganizationWebAccess; configurations: unknown;
-  provisioner?: OrganizationWorkerProvisioner; now?: () => number; lifetimeMs?: number; operationTimeoutMs?: number; heartbeatIntervalMs?: number; observations?: ObservationCache }) {
+  provisioner?: OrganizationWorkerProvisioner; now?: () => number; lifetimeMs?: number; operationTimeoutMs?: number; heartbeatIntervalMs?: number; observations?: ObservationCache; schedule?: unknown; runbookPolicy?: unknown }) {
   const leases = new OrganizationWorkerLeases(options.store, { now: options.now, lifetimeMs: options.lifetimeMs });
   let supervisor: OrganizationWorkerSupervisor;
   // Validate configurations before creating a lifecycle timer. Calls cannot arrive before this factory returns.
-  const connections = new OrganizationConnections(options.store, options.access, { invoke: (...args) => supervisor.invoke(...args) }, options.configurations, options.now, options.observations);
+  const connections = new OrganizationConnections(options.store, options.access, { invoke: (...args) => supervisor.invoke(...args) }, options.configurations, options.now, options.observations, { schedule: options.schedule });
   supervisor = new OrganizationWorkerSupervisor({ leases, authorize: binding => connections.workerAuthorization(binding), provisioner: options.provisioner,
     operationTimeoutMs: options.operationTimeoutMs, heartbeatIntervalMs: options.heartbeatIntervalMs });
-  return { connections, supervisor, leases };
+  const runbooks = new RunbookService(options.store, connections, options.runbookPolicy, options.now);
+  return { connections, supervisor, leases, runbooks };
 }

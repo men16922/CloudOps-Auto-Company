@@ -17,7 +17,7 @@ const config = { configurationId: 'aws-read', label: 'Synthetic AWS', organizati
 const errorCode = (expected: string) => (error: unknown) => error instanceof CloudOperationError && error.code === expected;
 const unit = (accountId: string, region: string, service: InventoryUnit['service'], names: string[]): InventoryUnit => ({ accountId, region, service, collectedAt: '2026-10-11T00:00:00.000Z', hasMore: false, items: names.map(name => ({ name })), source: 'direct' });
 
-async function fixture(t: TestContext) {
+async function fixture(t: TestContext, options: { schedule?: unknown; now?: () => number } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'cloudops-sync-host-')), store = new SqliteCloudStore(join(directory, 'cloud.sqlite'));
   const identities = { async verify(token: string) { return { actorId: identityActor(issuer, token === 'valid-a' ? 'employee-a' : 'employee-b'), expiresAt: 1_800_003_600_000 }; } };
   const access = new OrganizationWebAccess(identities, store, () => 1_800_000_000_000);
@@ -35,13 +35,15 @@ async function fixture(t: TestContext) {
       fetched.push(command.unit!); const value = units.get(command.unit!);
       return value ? { ok: true, result: { connectionId: binding.connectionId, jobId: job!.jobId, unitId: command.unit, unit: tamper ? { ...value, accountId: '999999999999' } : value } } : { ok: false, code: 'sync_unit_not_found' };
     }
+    if (command.operation === 'status') return { ok: true, result: { connectionId: binding.connectionId, accountId: binding.accountId, roleName: binding.roleName, region: binding.region, status: 'connected' } };
+    if (command.operation === 'logout') return { ok: true, result: { disconnected: true, remoteLogout: 'confirmed' } };
     return { ok: false, code: 'unsupported' };
   } };
   const cache = new FileObservationCache(join(directory, 'observations'));
-  const connections = new OrganizationConnections(store, access, transport, [config], () => 1_800_000_000_000, cache);
+  const connections = new OrganizationConnections(store, access, transport, [config], options.now ?? (() => 1_800_000_000_000), cache, { schedule: options.schedule });
   t.after(async () => { await connections.close(); store.close(); await rm(directory, { recursive: true, force: true }); });
   const add = (value: InventoryUnit) => { const id = randomUUID(); units.set(id, value); job!.units.push({ id, accountId: value.accountId, region: value.region, service: value.service, count: value.items.length }); return id; };
-  return { connections, cache, directory, fetched, add, job: () => job!, tamper: () => { tamper = true; },
+  return { connections, cache, directory, fetched, add, job: () => job!, fetchedJob: () => job, tamper: () => { tamper = true; },
     session: (token = 'valid-a') => access.authenticate(`Bearer ${token}`, config.organizationId, config.workspaceId) };
 }
 
@@ -156,4 +158,22 @@ test('after a sync starts the host collects its results without the browser and 
   // The browser's poll after the fact finds the job done and records nothing again.
   const summary = await s.connections.syncStatus(session, connection.id);
   assert.deepEqual([summary.remaining, (await s.connections.report(session, connection.id)).snapshots.length, s.fetched.length], [0, 1, 2]);
+});
+
+test('scheduled sync runs on the live AWS session of the user after the interval, never without one', async t => {
+  let clock = 1_800_000_000_000; const syncs: string[] = [];
+  const s = await fixture(t, { schedule: { syncEveryMinutes: 60 }, now: () => clock });
+  const session = await s.session(), connection = await s.connections.create(session, { configurationId: 'aws-read', requestKey: randomUUID() });
+  assert.equal((await s.connections.list(session)).syncEveryMinutes, 60, 'the browser is told the interval');
+  await s.connections.runSchedule(); assert.equal(s.fetchedJob(), undefined, 'no AWS session seen yet: nothing is started');
+  await s.connections.status(session, connection.id);
+  await s.connections.runSchedule(); syncs.push(s.job().jobId);
+  s.add(unit('111111111111', 'ap-northeast-2', 'ec2', ['payer-web'])); Object.assign(s.job(), { state: 'completed', finishedAt: new Date(clock).toISOString() });
+  await s.connections.syncStatus(session, connection.id);
+  clock += 30 * 60_000; await s.connections.runSchedule(); assert.equal(s.job().jobId, syncs[0], 'not before the interval');
+  clock += 31 * 60_000; await s.connections.runSchedule(); assert.notEqual(s.job().jobId, syncs[0], 'a new sync starts after the interval');
+  Object.assign(s.job(), { state: 'completed', finishedAt: new Date(clock).toISOString() }); await s.connections.syncStatus(session, connection.id);
+  await s.connections.perform(session, connection.id, { requestKey: randomUUID(), operation: 'logout' });
+  const afterLogout = s.job().jobId; clock += 120 * 60_000; await s.connections.runSchedule();
+  assert.equal(s.job().jobId, afterLogout, 'after AWS logout the scheduler starts nothing');
 });

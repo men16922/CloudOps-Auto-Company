@@ -80,6 +80,8 @@ const store = new DynamoDbCloudStore({ tableName, region }, { credentials: compa
 | GET /:connectionId/views | 이 사용자의 저장된 보기(서버 저장소, 연결 설정별) |
 | POST /:connectionId/views | `{operation:'save', view}`(같은 이름 덮어쓰기) 또는 `{operation:'delete', id}`. `Idempotency-Key` 필요 |
 | POST /:connectionId/actions | login/verify/inspect/directory/disconnect/logout/sync |
+| GET /:connectionId/runbooks | 런북 설정 여부·허용 목록·이 구성원의 권한(요청/승인)·팀 요청 목록(연결 설정별, worker 호출 없음) |
+| POST /:connectionId/runbooks | `{operation:'request', runbook, target, reason, changeRef?}`, `{operation:'approve'|'reject', requestId, note?}`, `{operation:'execute'|'cancel'|'refresh', requestId}`. `Idempotency-Key` 필요. 문서·파라미터는 받지 않는다 |
 
 매 요청에 현재 Bearer 신원·membership·소유권을 검사한다. POST는 UUID Idempotency-Key와 strict JSON을 받는다. 웹 Host/Origin을 고정하고 Origin 없는 GET은 same-origin Fetch Metadata를 요구한다. 개인/demo cookie·forwarded-user header·body의 actor/role은 권한이 아니다.
 
@@ -101,3 +103,15 @@ inspect는 등록된 서비스(`alarms`·`metrics`·`ec2`·`eks`·`rds`·`elasti
 - **실패 범위:** 단위 하나(`read_*`), 계정 하나(`denied`/`failed`), 세션 수준(신원 변경·만료 → 작업과 세션 종료)으로 나뉜다.
 - **캐시:** 호스트는 단위마다 `observations/<scope digest>.units/u-<key digest>.json`(0600, 디렉터리 0700)에 저장한다. 완전한 동기화가 끝나면 더 이상 생성되지 않는 키를 지운다. 끝난 작업(완료·일부 실패)은 그 작업의 단위만으로 판정해 `report.json`에 한 번 기록한다(최근 48시간 전부, 이후 하루 1개·35일). 동기화 요약의 `remaining`은 아직 가져오지 않은 단위 수다. 동기화를 시작하면 호스트가 3초 간격으로 끝난 단위를 직접 가져온다(브라우저가 떠나도 계속). 매 단계 연결·구성원·설정을 다시 확인하고, 작업이 끝나거나 worker가 없거나 권한이 회수되거나 6시간이 지나거나 호스트가 종료되면 멈춘다. worker 생성·로그인·동기화 시작은 하지 않는다. 단위는 호스트가 job의 참조(id·계정·리전·서비스·항목 수)와 범위 계정 목록에 대조한 뒤에만 저장한다.
 - **수명주기 근거:** EKS `describe-cluster-versions --include-all`(종료일 포함), RDS `describe-db-major-engine-versions`, MSK `list-kafka-versions`를 동기화마다 한 번씩(해당 자원이 있을 때만) 읽어 항목에 `support`/`eos`를 붙인다.
+
+## 예약 동기화 (schedule)
+
+`"schedule": { "syncEveryMinutes": 60 }`(30~1440분). 호스트가 1분마다 확인해, 이 프로세스에서 AWS 세션이 연결된 것으로 확인된 연결 중 마지막 동기화가 간격보다 오래된 연결의 동기화를 시작한다. 사용자 본인의 Device Code 세션(worker)만 쓰며 worker 생성·로그인은 하지 않는다. 세션이 끝나거나(로그아웃·만료·호스트 재시작) 구성원·설정 확인에 실패하면 그 연결은 예약에서 빠진다. 세션 길이는 Identity Center의 세션 지속 시간 설정을 따른다. 사람이 로그인하지 않은 상태의 무인 수집(서비스 역할)은 데이터 가시성 정책과 함께 회사 배포 단계에서 설계한다.
+
+## 런북 실행 (runbooks)
+
+- **설정:** 연결 항목에 `"runbooks": { "roleName": "<런북 전용 permission set>", "allowed": ["connectivity-check", "ec2-start", "ec2-restart", "ec2-stop"] }`. 카탈로그는 코드에 고정(`packages/contracts/aws/runbooks.ts`)이며 문서 이름·파라미터를 요청에서 받지 않는다. 승인 정책은 `"runbookPolicy": { "allowSelfApproval": false }`(기본 2인). 이 값을 바꾸면 binding이 바뀌어 사용자는 연결을 새로 등록한다.
+- **권한:** 런북 permission set은 조회용과 분리한다. 카탈로그 문서의 `ssm:StartAutomationExecution`, `ssm:GetAutomationExecution`, EC2 런북이 호출하는 `ec2:Start/Stop/RebootInstances`와 조회만 허용한다. 테스트 계정은 `scripts/ops/runbook-test-setup.sh`(점검 문서 `CloudOps-ConnectivityCheck`, permission set, 할당)로 준비한다. worker는 같은 SSO 세션에 런북 프로필을 따로 두고 실행 전 조회 세션과 같은 사람인지 STS로 확인한다.
+- **흐름:** operator가 사유와 함께 요청한다. EC2 대상은 요청자 동기화 결과에 있는 인스턴스만 된다. reviewer 역할의 다른 구성원이 승인하고, 요청자가 본인 세션으로 실행한다. 호스트가 실행 상태를 5초 간격(최대 30분)으로 읽어 성공·실패를 기록한다. worker가 바쁘거나 AWS 세션이 없으면 아무것도 시작하지 않고 승인 상태로 되돌린다. 시작 응답을 잃으면 다시 보내지 않고 '실행 여부 미확인'으로 둔다.
+- **기록:** 요청·결재·실행 이벤트를 저장소에 남긴다(연결 설정별 최근 200건). 불변 감사 저장소는 아니다.
+

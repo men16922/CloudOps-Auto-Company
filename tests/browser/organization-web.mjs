@@ -12,7 +12,7 @@ const root = await mkdtemp(join(tmpdir(), 'cloudops-org-web-'));
 const base = '/api/organizations/v1/synthetic-org/workspaces/synthetic-workspace/aws/connections';
 const accounts = { 'synthetic-user-a': '123456789012', 'synthetic-user-b': '999999999999' };
 const ids = { 'synthetic-user-a': '11111111-1111-4111-8111-111111111111', 'synthetic-user-b': '22222222-2222-4222-8222-222222222222' };
-const created = new Set(), states = new Map(), keys = new Set(), syncs = new Map(), views = new Map(); let revoked = false, directoryDenied = false, cursorsExpired = false;
+const created = new Set(), states = new Map(), keys = new Set(), syncs = new Map(), views = new Map(), runbookRequests = new Map(); let revoked = false, directoryDenied = false, cursorsExpired = false;
 const member = '210987654321', unassigned = '310987654321';
 let browser, server;
 try {
@@ -80,6 +80,8 @@ try {
         ];
         if (path === `${base}/${row.id}/report` && request.method === 'GET') { send(200, { snapshots: syncs.has(actor) ? reportSnapshots : [] }); return; }
         if (path === `${base}/${row.id}/views` && request.method === 'GET') { send(200, { items: views.get(actor) ?? [] }); return; }
+        const runbookState = () => ({ enabled: true, allowed: ['connectivity-check', 'ec2-restart'], canRequest: true, canApprove: true, selfApproval: true, requests: runbookRequests.get(actor) ?? [] });
+        if (path === `${base}/${row.id}/runbooks` && request.method === 'GET') { send(200, runbookState()); return; }
         if (request.method !== 'POST') { send(404, {}); return; }
         let text = ''; for await (const chunk of request) text += chunk;
         const body = JSON.parse(text); const key = request.headers['idempotency-key'];
@@ -91,6 +93,21 @@ try {
           const list = views.get(actor) ?? [], existing = list.find(item => item.view.name === body.view?.name);
           views.set(actor, body.operation === 'save' ? [...list.filter(item => item !== existing), { id: existing?.id ?? crypto.randomUUID(), updatedAt: '2026-10-11T00:03:00.000Z', view: body.view }] : list.filter(item => item.id !== body.id));
           send(200, { items: views.get(actor) }); return;
+        }
+        if (path === `${base}/${row.id}/runbooks`) {
+          // Runbook actions name catalog entries and request ids only; documents and parameters never come from the browser.
+          expect(Object.keys(body)).not.toContain('document');
+          const list = runbookRequests.get(actor) ?? [], now = '2026-10-11T00:05:00.000Z', me = { self: true, label: 'abc123' };
+          if (body.operation === 'request') {
+            expect(body).toEqual({ operation: 'request', runbook: 'connectivity-check', target: { accountId: row.accountId, region: row.region }, reason: 'Synthetic permission check' });
+            runbookRequests.set(actor, [{ id: crypto.randomUUID(), runbook: body.runbook, target: body.target, reason: body.reason, requester: me, createdAt: now, state: 'pending', events: [{ at: now, action: 'requested', by: me }] }, ...list]);
+          } else {
+            const item = list.find(value => value.id === body.requestId); expect(item).toBeTruthy();
+            if (body.operation === 'approve') Object.assign(item, { state: 'approved', decision: { by: me, at: now, approved: true } });
+            if (body.operation === 'execute') Object.assign(item, { state: 'running', execution: { executionId: '0d0d0d0d-1111-4222-8333-444444444444', status: 'InProgress' } });
+            if (body.operation === 'refresh') Object.assign(item, { state: 'succeeded', execution: { executionId: '0d0d0d0d-1111-4222-8333-444444444444', status: 'Success' } });
+          }
+          send(200, runbookState()); return;
         }
         if (path !== `${base}/${row.id}/actions`) { send(404, {}); return; }
         if (body.operation === 'login') { states.set(actor, 'awaiting-user'); const result = state(); delete result.userCode; delete result.verificationUri; delete result.verificationUriComplete; send(200, result); return; }
@@ -168,7 +185,7 @@ try {
   // A full-page capture briefly changes the viewport metrics, which can make AppLayout close its navigation; reopen it.
   if (await page.getByRole('button', { name: '탐색 열기' }).count()) await page.getByRole('button', { name: '탐색 열기' }).click();
   const nav = page.getByRole('navigation');
-  for (const name of ['운영 리포트', 'EC2', 'EKS', 'RDS', 'ElastiCache', 'MSK', 'Serverless', 'CloudWatch 경보', 'CloudWatch 표준 지표', 'Systems Manager', '수명주기(EOS)', '보안 태세', '태그 준수', 'AWS Health', '조직 계정']) await expect(nav.getByRole('link', { name, exact: true })).toBeVisible();
+  for (const name of ['운영 리포트', 'EC2', 'EKS', 'RDS', 'ElastiCache', 'MSK', 'Serverless', 'CloudWatch 경보', 'CloudWatch 표준 지표', 'Systems Manager', '런북 실행', '수명주기(EOS)', '보안 태세', '태그 준수', 'AWS Health', '조직 계정']) await expect(nav.getByRole('link', { name, exact: true })).toBeVisible();
   await expect(nav.getByRole('link', { name: 'Lambda', exact: true })).toHaveCount(0);
   // Every table shows account and region; the scope filter and search conditions narrow it.
   await nav.getByRole('link', { name: 'EC2', exact: true }).click();
@@ -196,6 +213,15 @@ try {
   await nav.getByRole('link', { name: 'Systems Manager', exact: true }).click();
   await page.getByRole('tab', { name: '패치 준수' }).click(); await expect(page.getByText('NON_COMPLIANT', { exact: true })).toBeVisible();
   await page.getByRole('tab', { name: 'Automation' }).click(); await expect(page.getByText('Failed', { exact: true })).toBeVisible();
+  // Runbooks: catalog only, request with a reason → approval → the requester runs it → status read back.
+  await nav.getByRole('link', { name: '런북 실행', exact: true }).click(); await expect(page.getByRole('heading', { name: '허용된 런북', level: 2 })).toBeVisible();
+  await page.getByRole('button', { name: '실행 요청', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: /^런북/ }).click(); await page.getByRole('option', { name: /^연결 점검/ }).click();
+  await page.getByRole('textbox', { name: '사유' }).fill('Synthetic permission check');
+  await page.getByRole('dialog').getByRole('button', { name: '요청', exact: true }).click(); await expect(page.getByText('승인 대기', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '승인', exact: true }).click(); await expect(page.getByText('승인됨 · 실행 가능', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '실행', exact: true }).click(); await expect(page.getByText('실행 중', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '상태 확인', exact: true }).click(); await expect(page.getByText('성공', { exact: true })).toBeVisible();
   await nav.getByRole('link', { name: 'CloudWatch 표준 지표', exact: true }).click(); await expect(page.getByRole('heading', { name: 'RDS 여유 저장공간' })).toBeVisible();
   // Governance: Security Hub/GuardDuty findings with "not enabled" coverage, required-tag compliance and AWS Health (support plan aware).
   await nav.getByRole('link', { name: '보안 태세', exact: true }).click();
@@ -270,7 +296,7 @@ try {
   await page.getByRole('button', { name: '웹 로그아웃', exact: true }).click(); await expect(page.getByRole('button', { name: '조직 웹 로그인', exact: true })).toBeVisible();
   await page.getByRole('combobox', { name: 'Language / 언어' }).selectOption('en'); await page.reload(); await expect(page.getByRole('button', { name: 'Sign in to organization', exact: true })).toBeVisible();
   expect(errors).toEqual([]); expect(await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).not.toContain('synthetic-user');
-  console.log('Organization web synthetic contract passed: sign-in, payer select, one-click device code with code-carrying link, first sync and progress, saved views, operations report (trend, new/resolved, exports), multi-account inventory with account/region columns, scope filter, search conditions, serverless tabs, Systems Manager, security posture, tag compliance, AWS Health, tagged-VPC region usage, derived status/findings/console links, scoped directory pages/OU navigation/expiry/lifecycle/filter/partial denial, user switch, membership revocation, logout and reload.');
+  console.log('Organization web synthetic contract passed: sign-in, payer select, one-click device code with code-carrying link, first sync and progress, saved views, operations report (trend, new/resolved, exports), runbook request/approval/run, multi-account inventory with account/region columns, scope filter, search conditions, serverless tabs, Systems Manager, security posture, tag compliance, AWS Health, tagged-VPC region usage, derived status/findings/console links, scoped directory pages/OU navigation/expiry/lifecycle/filter/partial denial, user switch, membership revocation, logout and reload.');
 } catch (error) {
   const page = browser?.contexts()[0]?.pages()[0];
   if (page) { const directory = process.env.CLOUDOPS_SCREENSHOT_DIR ?? 'test-results/screenshots'; await mkdir(directory, { recursive: true }); await page.screenshot({ path: join(directory, 'organization-web-failure.png'), fullPage: true }); console.error(await page.locator('body').ariaSnapshot()); }

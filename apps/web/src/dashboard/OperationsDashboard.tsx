@@ -19,6 +19,8 @@ import { useLanguage } from '../i18n';
 import type { DirectorySnapshot } from '../../../../packages/contracts/aws/directory';
 import type { InventoryUnit, SyncSummary } from '../../../../packages/contracts/aws/inventory';
 import type { ReportSnapshot, SnapshotFinding } from '../../../../packages/contracts/aws/report';
+import type { RunbookCommand, RunbookState } from '../../../../packages/contracts/aws/runbooks';
+import RunbooksView from './RunbooksView';
 import type { SavedQuery, SavedView, SavedViewInput } from '../../../../packages/contracts/aws/saved-views';
 import type { DashboardView } from './AccountDashboard';
 import DirectoryPanel from './DirectoryPanel';
@@ -32,7 +34,8 @@ import { guardDutyLevel, securityCoverage, tagRows, type CoverageRow, type Cover
 
 type Props = { view: DashboardView; viewHref: (view: DashboardView) => string; pageTitle: (view: DashboardView) => string; connected: boolean;
   report?: ReportSnapshot[]; views: SavedView[]; onSaveView: (view: SavedViewInput) => Promise<boolean>; onDeleteView: (id: string) => Promise<boolean>; busy: boolean; portal?: { startUrl: string; roleName: string }; requiredTags?: readonly string[];
-  sync?: SyncSummary; units: Partial<Record<Service, InventoryUnit[]>>; directory?: DirectorySnapshot; hasDirectoryScope: boolean;
+  runbooks?: RunbookState; onRunbookCommand: (command: RunbookCommand) => Promise<string | undefined>; onRefreshRunbooks: () => void; payer: { accountId: string; region: string };
+  sync?: SyncSummary; syncEveryMinutes?: number; units: Partial<Record<Service, InventoryUnit[]>>; directory?: DirectorySnapshot; hasDirectoryScope: boolean;
   onSync: () => void; onReadDirectory: () => void; onNavigate: (cursor: string) => void };
 const tone: Record<Finding['severity'], StatusIndicatorProps.Type> = { critical: 'error', warning: 'warning', info: 'info' };
 // Status hues (validated: CVD and normal-vision separation pass). The neutral gray is the "no data / stopped" status and always carries a label.
@@ -45,7 +48,7 @@ const shortcut = (startUrl: string, accountId: string, roleName: string, url: st
 
 /** Read-only operations views over the cached multi-account inventory. Status is derived only from collected evidence. */
 export default function OperationsDashboard(props: Props) {
-  const { view, viewHref, pageTitle, connected, busy, portal, requiredTags = [], sync, units, directory, hasDirectoryScope, onSync, onReadDirectory, onNavigate, report, views, onSaveView, onDeleteView } = props;
+  const { view, viewHref, pageTitle, connected, busy, portal, requiredTags = [], sync, syncEveryMinutes, units, directory, hasDirectoryScope, onSync, onReadDirectory, onNavigate, report, views, onSaveView, onDeleteView, runbooks, onRunbookCommand, onRefreshRunbooks, payer } = props;
   const { t, locale } = useLanguage();
   const [accountScope, setAccountScope] = useState<string[]>([]), [regionScope, setRegionScope] = useState<string[]>([]);
   const [serverlessTab, setServerlessTab] = useState('lambda'), [ssmTab, setSsmTab] = useState('nodes'), [securityTab, setSecurityTab] = useState('securityhub'), [allFindings, setAllFindings] = useState(false);
@@ -176,6 +179,12 @@ export default function OperationsDashboard(props: Props) {
         <Box color="text-body-secondary" fontSize="body-s">{sync ? t(`${time(sync.finishedAt ?? sync.startedAt)} · 계정 ${sync.accounts.length} · 사용 리전 ${usedRegions.size} (VPC 태그 기준) · ${sync.mode === 'config' ? 'AWS Config 집계자' : '계정별 직접 조회'}${sync.live ? '' : ' · 캐시'}${interrupted ? ' · AWS 연결 후 다시 동기화하세요' : ''}`,
           `${time(sync.finishedAt ?? sync.startedAt)} · ${sync.accounts.length} accounts · ${usedRegions.size} regions in use (tagged VPC) · ${sync.mode === 'config' ? 'AWS Config aggregator' : 'direct per account'}${sync.live ? '' : ' · cached'}${interrupted ? ' · sync again once connected' : ''}`)
           : t('동기화하면 Organizations 범위의 계정을 확인하고 VPC 태그가 있는 리전의 자원을 읽어 디스크에 저장합니다.', 'Sync checks the accounts in the Organizations scope and reads resources in regions with tagged VPCs, saving them to disk.')}</Box>
+        {syncEveryMinutes ? <Box color="text-body-secondary" fontSize="body-s">{(() => {
+          const every = syncEveryMinutes % 60 ? t(`${syncEveryMinutes}분`, `${syncEveryMinutes} min`) : t(`${syncEveryMinutes / 60}시간`, `${syncEveryMinutes / 60} h`);
+          const last = sync?.finishedAt ?? sync?.startedAt, next = last ? new Date(Date.parse(last) + syncEveryMinutes * 60_000) : undefined;
+          return connected ? t(`자동 동기화: ${every}마다${next ? ` · 다음 ${next.toLocaleString(locale)}` : ''} (AWS 세션이 유지되는 동안, 화면을 닫아도 진행)`, `Automatic sync every ${every}${next ? ` · next ${next.toLocaleString(locale)}` : ''} (while the AWS session lasts, even with this page closed)`)
+            : t(`자동 동기화: ${every}마다 (AWS 로그인 후 시작)`, `Automatic sync every ${every} (starts after AWS sign-in)`);
+        })()}</Box> : null}
       </SpaceBetween>
       <Button variant="primary" iconName="refresh" loading={sync?.state === 'running' && sync.live} disabled={!connected || busy || sync?.state === 'running' && sync.live} onClick={onSync}>{t('동기화', 'Sync')}</Button>
     </div>
@@ -204,6 +213,10 @@ export default function OperationsDashboard(props: Props) {
     { id: 'actions', header: t('작업', 'Actions'), minWidth: 150, cell: item => item.link ? <Button variant="inline-link" href={item.link} target="_blank" iconName="external" iconAlign="right" ariaLabel={t(`${item.subject} AWS 콘솔에서 열기`, `Open ${item.subject} in AWS console`)}>{t('콘솔에서 열기', 'Open in console')}</Button> : '—' },
   ]} empty={<Box textAlign="center" color="text-body-secondary">{assessment.overall === 'unknown' ? t('아직 수집한 정보가 없습니다. 동기화를 실행하세요.', 'Nothing collected yet. Run a sync.') : t('수집 범위에서 조치·주의 항목이 없습니다. 전체 정상 판정은 아닙니다.', 'No items in the collected scope. This is not a health verdict for the whole account.')}</Box>} />;
 
+  if (view === 'runbooks') {
+    const instances = allUnits.filter(unit => unit.service === 'ec2').flatMap(unit => unit.items.filter(item => item.id).map(item => ({ id: item.id!, name: item.name, state: item.state, accountId: unit.accountId, region: unit.region })));
+    return <RunbooksView state={runbooks} instances={instances} payer={payer} accountLabel={accountLabel} onRefresh={onRefreshRunbooks} onCommand={onRunbookCommand} />;
+  }
   if (view === 'report') {
     const describe = (item: SnapshotFinding) => { const finding = item as unknown as Finding;
       return { subject: item.kind === 'tags' || item.kind === 'read-failed' ? serviceLabel[item.subject as Service] ?? item.subject : item.subject, detail: `${kindLabel(finding) ?? item.kind} · ${findingDetail(finding)}` }; };

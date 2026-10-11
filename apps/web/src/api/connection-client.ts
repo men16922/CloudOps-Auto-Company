@@ -6,6 +6,7 @@ import { checkedDeviceLink, connectionListSchema, connectionObservationsSchema, 
 import { inventoryResponseSchema, syncSummarySchema, type InventoryUnit, type SyncSummary } from '../../../../packages/contracts/aws/inventory';
 import { reportResponseSchema, type ReportSnapshot } from '../../../../packages/contracts/aws/report';
 import { savedViewListSchema, type SavedView, type SavedViewInput } from '../../../../packages/contracts/aws/saved-views';
+import { runbookStateSchema, type RunbookCommand, type RunbookState } from '../../../../packages/contracts/aws/runbooks';
 
 type ConnectionClientState = {
   identity: WebIdentity | null; list: ConnectionList; selectedId?: string; status?: ConnectionState; directory?: DirectorySnapshot;
@@ -13,6 +14,8 @@ type ConnectionClientState = {
   units: Partial<Record<ConnectionPage['operation'], InventoryUnit[]>>; sync?: SyncSummary;
   /** Assessments of finished syncs (host disk cache) for the trend report, and this user's saved views (server settings). */
   report?: ReportSnapshot[]; views: SavedView[];
+  /** Runbook catalog and the team's request queue for the selected payer (loaded when the runbook page opens). */
+  runbooks?: RunbookState;
   /** A finished live sync still has units the host has not cached yet; polling continues while it makes progress. */
   syncDraining: boolean;
   busy: boolean; loading: boolean; error?: string; retryable: boolean;
@@ -85,7 +88,7 @@ export class OrganizationConnectionClient {
     // Authentication/ownership failures wipe observations; other failures keep the last read results visible.
     const wipe = !(error instanceof RequestError) || [401, 403, 404].includes(error.status);
     this.set({ error: error instanceof RequestError ? error.code : 'request_unknown', busy: false, loading: false, status: undefined, retryable,
-      ...(wipe ? { directory: undefined, units: {}, sync: undefined, report: undefined, views: [], syncDraining: false, } : {}) });
+      ...(wipe ? { directory: undefined, units: {}, sync: undefined, report: undefined, runbooks: undefined, views: [], syncDraining: false, } : {}) });
   }
   async signIn() {
     this.acceptingIdentity = true;
@@ -105,14 +108,14 @@ export class OrganizationConnectionClient {
       if (sequence !== this.listSequence) return;
       const selected = list.items.find(item => item.id === this.value.selectedId);
       const changed = selected && JSON.stringify(selected) !== JSON.stringify(this.value.list.items.find(item => item.id === this.value.selectedId));
-      if (changed) this.set({ status: undefined, directory: undefined, units: {}, sync: undefined, report: undefined, views: [], syncDraining: false, });
-      this.set({ list, loading: false, ...(!selected ? { selectedId: undefined, status: undefined, directory: undefined, units: {}, sync: undefined, report: undefined, views: [], syncDraining: false, } : {}) });
+      if (changed) this.set({ status: undefined, directory: undefined, units: {}, sync: undefined, report: undefined, runbooks: undefined, views: [], syncDraining: false, });
+      this.set({ list, loading: false, ...(!selected ? { selectedId: undefined, status: undefined, directory: undefined, units: {}, sync: undefined, report: undefined, runbooks: undefined, views: [], syncDraining: false, } : {}) });
     } catch (error) { if (sequence === this.listSequence) this.fail(error, epoch); }
   }
   async select(id: string) {
     if (this.value.busy || !this.value.list.items.some(item => item.id === id)) return;
     this.pending = undefined;
-    this.set({ selectedId: id, status: undefined, directory: undefined, units: {}, sync: undefined, report: undefined, views: [], syncDraining: false, error: undefined, retryable: false });
+    this.set({ selectedId: id, status: undefined, directory: undefined, units: {}, sync: undefined, report: undefined, runbooks: undefined, views: [], syncDraining: false, error: undefined, retryable: false });
     // Cached results first: a connected status starts the automatic refresh, which would otherwise block the cache load until it finishes.
     await this.loadObservations(); await this.refreshStatus();
   }
@@ -172,6 +175,30 @@ export class OrganizationConnectionClient {
       const response = reportResponseSchema.parse(await this.request(`/${selected.id}/report`, epoch, undefined, 16_000_000)); this.current(epoch);
       if (selected.id === this.value.selectedId) this.set({ report: response.snapshots });
     } catch (error) { if (epoch === this.epoch && error instanceof RequestError && [401, 403].includes(error.status)) this.fail(error, epoch); }
+  }
+  async loadRunbooks() {
+    const selected = this.value.list.items.find(item => item.id === this.value.selectedId);
+    if (!selected) return;
+    const epoch = this.epoch;
+    try {
+      const response = runbookStateSchema.parse(await this.request(`/${selected.id}/runbooks`, epoch)); this.current(epoch);
+      if (selected.id === this.value.selectedId) this.set({ runbooks: response });
+    } catch (error) { if (epoch === this.epoch && error instanceof RequestError && [401, 403].includes(error.status)) this.fail(error, epoch); }
+  }
+  /** One runbook action per click (request, approve/reject, execute, cancel, refresh). Never retried automatically; returns the error code. */
+  async runbookCommand(command: RunbookCommand): Promise<string | undefined> {
+    const selected = this.value.list.items.find(item => item.id === this.value.selectedId);
+    if (!selected) return 'connection_unavailable';
+    const epoch = this.epoch;
+    try {
+      const response = runbookStateSchema.parse(await this.request(`/${selected.id}/runbooks`, epoch, { body: command, key: crypto.randomUUID() })); this.current(epoch);
+      if (selected.id === this.value.selectedId) this.set({ runbooks: response });
+      return undefined;
+    } catch (error) {
+      if (epoch === this.epoch && error instanceof RequestError && [401].includes(error.status)) this.fail(error, epoch);
+      if (epoch === this.epoch) await this.loadRunbooks();
+      return error instanceof RequestError ? error.code : 'request_unknown';
+    }
   }
   async loadViews() {
     const selected = this.value.list.items.find(item => item.id === this.value.selectedId);

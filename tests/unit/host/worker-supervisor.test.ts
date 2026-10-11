@@ -65,7 +65,7 @@ async function fixture(t: TestContext, enabled = true) {
     },
   };
   const options = { access, configurations: [config], now: () => now, lifetimeMs: 10_000, provisioner: enabled ? provisioner : undefined, heartbeatIntervalMs: 0, operationTimeoutMs: 500 };
-  const { connections, supervisor, leases } = createOrganizationWorkerRuntime({ ...options, store: first });
+  const { connections, supervisor, leases, runbooks } = createOrganizationWorkerRuntime({ ...options, store: first });
   const { connections: otherConnections, supervisor: other, leases: otherLeases } = createOrganizationWorkerRuntime({ ...options, store: second });
   t.after(async () => { hooks.stopFails = false; hooks.badStopReceipt = false; await Promise.allSettled([supervisor.close(), other.close()]);
     await Promise.all([...pipes.values()].map(pipe => pipe.stop())); first.close(); second.close(); await rm(directory, { recursive: true, force: true }); });
@@ -81,7 +81,7 @@ async function fixture(t: TestContext, enabled = true) {
     assert.equal((await connections.status(owner.session, owner.connection.id) as { status: string }).status, 'connected');
     return { ...owner, command };
   };
-  return { first, second, access, leases, otherLeases, supervisor, other, connections, otherConnections, membership, connect, login,
+  return { first, second, access, leases, otherLeases, supervisor, other, connections, otherConnections, runbooks, membership, connect, login,
     provisions, stops, calls, pipes, hooks, advance(ms: number) { now += ms; }, now: () => now };
 }
 
@@ -259,7 +259,7 @@ test('an infrastructure port ignoring cancellation is bounded and a late creatio
 });
 
 test('HTTP authentication, registry replay, supervisor generation and private worker reads compose without provider calls on refresh', async t => {
-  const s = await fixture(t), services = { access: s.access, connections: s.connections, publicOrigin: 'http://127.0.0.1' };
+  const s = await fixture(t), services = { access: s.access, connections: s.connections, runbooks: s.runbooks, publicOrigin: 'http://127.0.0.1' };
   const server = createOrganizationApiServer(services); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   t.after(() => server.close()); const address = server.address(); assert.ok(address && typeof address !== 'string');
   const origin = `http://127.0.0.1:${address.port}`; services.publicOrigin = origin;

@@ -36,6 +36,8 @@ export async function serveCliWorker(worker: OrganizationCliWorker, input: Reada
       case 'sync': return worker.startSync(context);
       case 'sync-status': return worker.syncStatus(context);
       case 'sync-unit': return worker.syncUnit(context, command.unit!);
+      case 'runbook-start': return worker.runbookStart(context, command.runbook!);
+      case 'runbook-status': return worker.runbookStatus(context, command.execution!);
     }
   };
   const line = async (value: string) => {

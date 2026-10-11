@@ -2,11 +2,12 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { z, ZodError } from 'zod';
 import { CloudOperationError } from '../../../../packages/contracts/errors';
 import type { OrganizationWebAccess } from '../identity/web-access';
+import type { RunbookService } from '../runbooks/runbooks';
 import type { OrganizationConnections } from '../connections/connections';
 import { webConfigurationSchema, type WebConfiguration } from '../../../../packages/contracts/web-config';
 import { connectionServices } from '../../../../packages/contracts/aws/connections';
 
-export type OrganizationApiServices = { access: OrganizationWebAccess; connections: OrganizationConnections; publicOrigin: string; web?: WebConfiguration };
+export type OrganizationApiServices = { access: OrganizationWebAccess; connections: OrganizationConnections; runbooks: RunbookService; publicOrigin: string; web?: WebConfiguration };
 const createSchema = z.object({ configurationId: z.string().min(1).max(64) }).strict();
 const actionSchema = z.object({ operation: z.enum(['login', 'verify', 'inspect', 'directory', 'disconnect', 'logout', 'sync']), service: z.enum(connectionServices).optional(), cursor: z.uuid().optional() }).strict();
 
@@ -25,7 +26,7 @@ async function handleOrganizationApi(request: IncomingMessage, response: ServerR
     const url = new URL(request.url ?? '/', origin);
     if (url.search || url.hash) throw new CloudOperationError(400, 'invalid_request', 'Query overrides are not supported.');
     if (url.pathname === '/api/organizations/config' && request.method === 'GET') { send(200, webConfigurationSchema.parse(services.web ?? { configured: false })); return; }
-    const route = /^\/api\/organizations\/v1\/([A-Za-z0-9_.:-]{1,128})\/workspaces\/([A-Za-z0-9_.:-]{1,128})\/aws\/connections(?:\/([a-f0-9-]{36})\/(status|actions|observations|sync|inventory|report|views)(?:\/([a-z0-9]{2,16}))?)?$/.exec(url.pathname);
+    const route = /^\/api\/organizations\/v1\/([A-Za-z0-9_.:-]{1,128})\/workspaces\/([A-Za-z0-9_.:-]{1,128})\/aws\/connections(?:\/([a-f0-9-]{36})\/(status|actions|observations|sync|inventory|report|views|runbooks)(?:\/([a-z0-9]{2,16}))?)?$/.exec(url.pathname);
     if (!route) throw new CloudOperationError(404, 'not_found', 'The organization route was not found.');
     if (request.rawHeaders.filter((name, index) => index % 2 === 0 && name.toLowerCase() === 'authorization').length !== 1) throw new CloudOperationError(401, 'web_sign_in_required', 'Sign in to the web application again.');
     const session = await services.access.authenticate(request.headers.authorization, route[1], route[2]);
@@ -39,8 +40,9 @@ async function handleOrganizationApi(request: IncomingMessage, response: ServerR
       if (route[4] === 'observations') { send(200, await services.connections.observations(session, route[3])); return; }
       if (route[4] === 'report') { send(200, await services.connections.report(session, route[3])); return; }
       if (route[4] === 'views') { send(200, await services.connections.views(session, route[3])); return; }
+      if (route[4] === 'runbooks') { send(200, await services.runbooks.state(session, route[3])); return; }
     }
-    if (request.method !== 'POST' || (route[3] && route[4] !== 'actions' && route[4] !== 'views')) throw new CloudOperationError(405, 'method_not_allowed', 'Use the registered request method.');
+    if (request.method !== 'POST' || (route[3] && route[4] !== 'actions' && route[4] !== 'views' && route[4] !== 'runbooks')) throw new CloudOperationError(405, 'method_not_allowed', 'Use the registered request method.');
     if (request.headers['content-type']?.split(';')[0]?.trim() !== 'application/json') throw new CloudOperationError(415, 'json_required', 'A JSON request is required.');
     const requestKey = z.uuid().parse(request.headers['idempotency-key']);
     const chunks: Buffer[] = []; let size = 0;
@@ -48,6 +50,7 @@ async function handleOrganizationApi(request: IncomingMessage, response: ServerR
     let body: unknown; try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new CloudOperationError(400, 'invalid_json', 'A JSON request is required.'); }
     if (!route[3]) { send(200, await services.connections.create(session, { ...createSchema.parse(body), requestKey })); return; }
     if (route[4] === 'views') { send(200, await services.connections.updateViews(session, route[3], { ...z.object({}).loose().parse(body), requestKey })); return; }
+    if (route[4] === 'runbooks') { send(200, await services.runbooks.command(session, route[3], { ...z.object({}).loose().parse(body), requestKey })); return; }
     send(200, await services.connections.perform(session, route[3], { ...actionSchema.parse(body), requestKey }));
   } catch (error) {
     if (error instanceof CloudOperationError) send(error.status, { code: error.code, message: error.message });

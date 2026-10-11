@@ -54,13 +54,16 @@ export function deploymentSummary(deploymentInput: unknown, webIdentity?: unknow
     if (browser && new URL(browser.tokenEndpoint).protocol === 'http:') warnings.push('browser OIDC endpoints use http loopback; use https outside local verification.');
   }
   if (new URL(deployment.publicOrigin).protocol === 'http:') warnings.push('publicOrigin is http loopback; production requires https.');
+  if (deployment.runbookPolicy?.allowSelfApproval) warnings.push('runbookPolicy.allowSelfApproval is on: one member can request and approve the same runbook (single-operator verification only).');
   return {
     publicOrigin: deployment.publicOrigin.startsWith('https:') ? `https://${host(deployment.publicOrigin)}` : deployment.publicOrigin,
     web: deployment.web.configured ? { scope: `${deployment.web.scope.organizationId}/${deployment.web.scope.workspaceId}`, browserOidc: browser ? { bearer: browser.bearer, scope: browser.scope } : null } : null,
     webSignIn: deployment.samlBridge ? { method: 'identity-center-saml', idpEntity: host(deployment.samlBridge.idp.ssoUrl), certificates: deployment.samlBridge.idp.certificates.length, sessionSeconds: deployment.samlBridge.sessionSeconds } : browser ? { method: 'oidc' } : null,
     verifier: verifierConfig ? { algorithms: verifierConfig.algorithms, jwks: 'uri' in verifierConfig.jwks ? 'remote' : 'static', tenant: Boolean(verifierConfig.tenant) } : null,
     connections: deployment.connections.map(item => ({ configurationId: item.configurationId, account: mask(item.accountId), roleName: item.roleName, region: item.region,
-      ssoRegion: item.ssoRegion, startUrlHost: host(item.startUrl), directory: Boolean(item.directory) })),
+      ssoRegion: item.ssoRegion, startUrlHost: host(item.startUrl), directory: Boolean(item.directory),
+      mode: item.inventory?.config ? 'config' : 'direct', runbooks: item.runbooks ? { roleName: item.runbooks.roleName, allowed: item.runbooks.allowed } : null })),
+    schedule: deployment.schedule ?? null,
     warnings,
   };
 }
