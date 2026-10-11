@@ -135,14 +135,19 @@ function ConnectionView({ controller, scope, view, viewHref, pageTitle }: { cont
       <p>{t('조직 웹 로그인 후 본인에게 허용된 Payer를 불러옵니다. AWS 로그인은 Payer별로 별도 진행합니다.', 'Sign in to the organization web app to load permitted payers. AWS sign-in is separate for each payer.')}</p>
       <Box><Button variant="primary" onClick={() => void controller.signIn()}>{t('조직 웹 로그인', 'Sign in to organization')}</Button></Box></SpaceBetween></Container> : null}
     {value.identity && !slot ? <Box float="right">{profile}</Box> : null}
-    {value.identity && !connected && !(value.status?.userCode && deviceLink) && value.error !== 'aws_session_required' ? payer
-      ? <Alert type="info" header={t('AWS 로그인이 필요합니다', 'AWS sign-in required')} action={<Button variant="primary" loading={value.busy} onClick={startLogin}>{t('AWS Device Code 로그인', 'AWS Device Code sign-in')}</Button>}>
-        {hasObservations ? t('지금은 마지막으로 저장된 결과만 표시합니다. ', 'Only the last saved results are shown. ') : t('아직 수집한 결과가 없습니다. ', 'Nothing has been collected yet. ')}
-        {t("로그인한 뒤 '동기화'를 누르면 새로 수집해 호스트 디스크에 저장합니다. 다음부터는 저장된 결과를 바로 보여 줍니다.", 'After signing in, press Sync to collect and save to the host disk. Saved results are shown right away next time.')}</Alert>
-      : <Container><SpaceBetween size="xs">
-      <Box variant="h3">{t('연결된 Payer가 없습니다', 'No payer connected')}</Box>
-      <Box color="text-body-secondary">{t('우측 상단 Payer 메뉴에서 Payer를 고르고 AWS Device Code로 로그인하세요. 연결되면 경보·자원·조직 상태를 읽어 옵니다.', 'Open the payer menu at the top right, choose a payer and sign in with AWS Device Code. Alarms, resources and organization state are read once connected.')}</Box>
-    </SpaceBetween></Container> : null}
+    {value.identity && !connected && !(value.status?.userCode && deviceLink) && value.error !== 'aws_session_required'
+      ? <Alert type="info" header={t('AWS 로그인이 필요합니다', 'AWS sign-in required')}
+        action={payer ? <Button variant="primary" loading={value.busy} onClick={startLogin}>{t('AWS Device Code 로그인', 'AWS Device Code sign-in')}</Button> : undefined}>
+        <SpaceBetween size="s">
+          {/* Choosing the payer and starting Device Code happen on the same card; the AWS page opens from the same click. */}
+          <Select ariaLabel={t('로그인할 Payer', 'Payer to sign in')} options={payers} selectedOption={payers.find(option => option.value === payer) ?? null} disabled={value.busy}
+            placeholder={payers.length ? t('Payer를 선택하세요', 'Choose a payer') : t('허용된 Payer가 없습니다', 'No permitted payer')} empty={t('허용된 Payer가 없습니다', 'No permitted payer')}
+            onChange={({ detail }) => { const id = detail.selectedOption.value!; setConfiguration(id); if (value.list.items.some(item => item.configurationId === id)) void controller.choosePayer(id); }} />
+          <span>{payer
+            ? <>{hasObservations ? t('지금은 마지막으로 저장된 결과만 표시합니다. ', 'Only the last saved results are shown. ') : t('아직 수집한 결과가 없습니다. ', 'Nothing has been collected yet. ')}
+              {t("로그인한 뒤 '동기화'를 누르면 새로 수집해 호스트 디스크에 저장합니다. 다음부터는 저장된 결과를 바로 보여 줍니다.", 'After signing in, press Sync to collect and save to the host disk. Saved results are shown right away next time.')}</>
+            : t('Payer를 고르면 같은 카드의 버튼으로 바로 AWS Device Code 로그인을 시작합니다.', 'Choose a payer, then start AWS Device Code sign-in with the button on this card.')}</span>
+        </SpaceBetween></Alert> : null}
     {value.status?.userCode && deviceLink ? <Alert type="info" header={t('AWS 화면에서 코드를 확인하고 허용하세요', 'Confirm the code on AWS and allow access')}><SpaceBetween size="s">
       <span className="sso-user-code">{value.status.userCode}</span>
       <Button variant="primary" href={deviceLink} target="_blank" rel="noopener noreferrer">{value.status.verificationUriComplete ? t('AWS 인증 페이지 열기 (코드 자동 입력)', 'Open AWS verification (code filled in)') : t('AWS 인증 페이지 열기', 'Open AWS verification')}</Button>

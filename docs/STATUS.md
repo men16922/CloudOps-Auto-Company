@@ -23,7 +23,7 @@
 
 ## 미검증·남음
 
-- 실제 계정: 런북 '연결 점검'은 요청→승인→실행까지 갔으나 빈 `Parameters` 결함(SSM ValidationException)으로 실패했다. 수정·`make check` 통과, **worker 이미지 재빌드와 호스트 재시작 후 재실행으로 성공 확인**이 남았다. 리포트 추이 화면은 실계정에서 확인했고, 저장된 보기는 미확인. 로컬 Config 기록기·집계자는 켜 둔 상태(월 $1 미만, 원복 정보는 .data/aws-rollback).
+- 실제 계정: 런북 '연결 점검'은 빈 `Parameters` 결함을 고친 뒤 요청→승인→실행이 성공했다(2026-10-11). EC2 시작·재시작·중지 런북은 실행하지 않았다. 리포트 추이·저장된 보기는 확인했다. 웹 사용자와 Device Code 승인자의 동일성 검사는 없다. 로컬 Config 기록기·집계자는 켜 둔 상태(월 $1 미만, 원복 정보는 .data/aws-rollback).
 - 회사 측: 회사 Identity Center SAML 앱·실제 값, 운영 DynamoDB 테이블·IAM role·TLS/proxy, 회사 Linux 호스트 격리 재실행·장애 주입, 운영자 요구.
 
 대상은 조직 AWS뿐이며 개인 CLI/계정 데이터, GCP/On-Prem/Azure 구현, Firebase/Google SDK, Android를 포함하지 않는다.

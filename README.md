@@ -36,9 +36,9 @@ npm run start:local    # 빌드된 웹+API를 같은 loopback origin(127.0.0.1:5
 ## 문서
 
 - [현재 상태](docs/STATUS.md) · [다음 작업](docs/NEXT_PLAN.md) · [작업 기록](docs/PROGRESS_LOG.md)
-- [레포 구조](docs/architecture/overview.md) · [인증과 사용자 격리](docs/architecture/identity.md)
+- [레포 구조](docs/architecture/overview.md) · [인증과 사용자 격리](docs/architecture/identity.md) · [인증 흐름도](docs/architecture/auth-flow.md) · [회사 버전에 가져갈 범위](docs/company-porting.md)
 - [API·로컬 호스트 구성](deploy/organization-api.md) · [웹 로그인과 대시보드](deploy/organization-web.md) · [worker 계약](deploy/organization-cli-worker/README.md)
 
 ## 범위와 한계
 
-로컬 loopback 호스트와 개인 테스트 계정(Identity Center)으로 검증한 단계이며, 회사 IdP·운영 저장소·TLS·운영 배포는 [다음 작업](docs/NEXT_PLAN.md)에 남아 있습니다. 쓰기 작업(런북 실행)은 별도 승인 전까지 없습니다. 원본 분리 기록과 자산 출처는 [docs/provenance](docs/provenance/assets.md)에 있으며, 이 저장소로 새 공개 라이선스를 부여하지 않습니다.
+로컬 loopback 호스트와 개인 테스트 계정(Identity Center)으로 검증한 단계이며, 회사 IdP·운영 저장소·TLS·운영 배포는 [다음 작업](docs/NEXT_PLAN.md)에 남아 있습니다. 쓰기 작업은 서버 고정 카탈로그의 런북(요청 → 승인 → 요청자 본인 세션으로 실행)뿐이며, 개인 테스트 계정에서 읽기 전용 '연결 점검' 1건만 실행해 확인했습니다. 웹 로그인 사용자와 Device Code 승인자의 동일성 검사는 아직 없습니다([인증 흐름](docs/architecture/auth-flow.md)). 원본 분리 기록과 자산 출처는 [docs/provenance](docs/provenance/assets.md)에 있으며, 이 저장소로 새 공개 라이선스를 부여하지 않습니다.

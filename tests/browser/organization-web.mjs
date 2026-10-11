@@ -156,6 +156,7 @@ try {
   };
   await choosePayer(accounts['synthetic-user-a']); await page.keyboard.press('Escape');
   await expect(page.getByText('아직 수집한 결과가 없습니다.', { exact: false })).toBeVisible(); // the page itself asks for AWS sign-in
+  await expect(page.getByRole('button', { name: /^로그인할 Payer/ })).toContainText(accounts['synthetic-user-a']); // the same card carries the payer select and the Device Code button
   // One click registers the payer connection, starts Device Code and points the opened window at the code-carrying link.
   const popupOpened = context.waitForEvent('page');
   await page.getByRole('button', { name: 'AWS Device Code 로그인', exact: true }).click(); await expect(page.getByText('DEMO-CODE', { exact: true })).toBeVisible();

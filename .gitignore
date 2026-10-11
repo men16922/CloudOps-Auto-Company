@@ -14,3 +14,5 @@ playwright-report/
 *.pem
 *.key
 .claude/settings.local.json
+# Notes from private conversations (may contain internal company context); never commit
+FEEDBACK.md
