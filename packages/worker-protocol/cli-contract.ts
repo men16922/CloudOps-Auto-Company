@@ -19,6 +19,8 @@ export const cliBindingSchema = z.object({
   ssoRegion: region, region, accountId: z.string().regex(/^\d{12}$/),
   roleName: z.string().regex(/^[\w+=,.@-]{1,64}$/),
   directory: directoryScopeSchema.optional(),
+  /** Host-derived from the verified web login (only when the deployment requires the match): the AWS session name must equal it. */
+  loginName: z.string().min(1).max(128).optional(),
   /** Server-fixed sync scope: candidate regions (absent = each account's enabled regions), account cap, an optional AWS Config aggregator
    * and the organization's required tag keys (compliance is evaluated in the UI from collected tag keys). */
   inventory: z.object({ regions: z.array(region).min(1).max(30).optional(), maxAccounts: z.number().int().min(1).max(200).optional(),
@@ -241,6 +243,8 @@ export function checkedCliIdentity(raw: string, binding: CliBinding): CliIdentit
   const prefix = `arn:aws:sts::${binding.accountId}:assumed-role/AWSReservedSSO_${binding.roleName}_`;
   if (value.Account !== binding.accountId || !value.Arn.startsWith(prefix)
     || !/^[a-fA-F0-9]{16}\/[A-Za-z0-9+=,.@_-]{1,64}$/.test(value.Arn.slice(prefix.length))) throw cliFailure('identity_mismatch', 403);
+  // The web user and the person who approved Device Code must be the same: the Identity Center user name is the role session name.
+  if (binding.loginName !== undefined && value.Arn.split('/').at(-1)!.toLowerCase() !== binding.loginName.toLowerCase()) throw cliFailure('web_identity_mismatch', 403);
   return { accountId: value.Account, arn: value.Arn, userId: value.UserId };
 }
 

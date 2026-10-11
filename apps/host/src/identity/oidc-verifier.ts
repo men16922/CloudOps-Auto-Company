@@ -28,6 +28,8 @@ export const oidcVerifierConfigSchema = z.object({
   clockSkewSeconds: z.number().int().min(0).max(300).default(60),
   maxLifetimeSeconds: z.number().int().min(60).max(86_400).default(3600),
   tenant: z.object({ claim: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,63}$/), allowed: z.array(z.string().min(1).max(256)).min(1).max(100) }).strict().optional(),
+  /** Optional claim (e.g. `email`) returned as `loginName`, for the server-side web-user/AWS-user match. Never used to pick an actor. */
+  loginNameClaim: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,63}$/).optional(),
 }).strict();
 export type OidcVerifierConfig = z.input<typeof oidcVerifierConfigSchema>;
 export type OidcClaims = Readonly<Record<string, unknown> & { iss: string; sub: string; exp: number; iat: number }>;
@@ -137,6 +139,8 @@ export class OidcJwtVerifier implements WebIdentityVerifier {
       tenant = value;
     }
     if (this.isRevoked && await this.isRevoked(Object.freeze({ ...claims }) as OidcClaims)) throw rejected();
-    return { actorId: identityActor(claims.iss, claims.sub, tenant), expiresAt: claims.exp * 1000 };
+    const loginName = this.config.loginNameClaim ? claims[this.config.loginNameClaim] : undefined;
+    return { actorId: identityActor(claims.iss, claims.sub, tenant), expiresAt: claims.exp * 1000,
+      ...(typeof loginName === 'string' && loginName.length > 0 && loginName.length <= 128 ? { loginName } : {}) };
   }
 }

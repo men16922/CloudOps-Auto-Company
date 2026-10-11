@@ -18,3 +18,5 @@
 - 백그라운드 서버 종료는 `pgrep -f`(래퍼 셸까지 잡힘) 대신 확인한 node PID에 직접 SIGTERM을 보낸다. 셸만 죽으면 node가 고아로 남아 lease를 계속 갱신한다.
 - worker 코드나 `cliBindingSchema`(strict)를 바꾸면 worker 이미지를 다시 빌드하고 `.data/docker-worker.json`의 `imageId`를 새 ID로 바꾼 뒤 호스트를 재시작한다. 예전 이미지는 새 binding 항목을 거부해 로그인 직후 `transport_lost`(화면: '전용 AWS 연결 환경을 시작하지 못했습니다')가 된다.
 - SSM `start-automation-execution`은 빈 `Parameters: {}`를 `ValidationException`으로 거부한다. 파라미터 없는 런북은 `Parameters`를 생략한다. 합성 단위 테스트가 같은 값을 기대하면 실계정에서만 드러나므로, 새 AWS 호출은 실계정 CloudTrail(`cloudtrail lookup-events`, 읽기 전용)로 확인한다.
+- 같은 EC2 인스턴스에 런북을 동시에 실행하지 않는다. `AWS-RestartEC2Instance`는 중지 후 시작이라, 진행 중인 시작 런북의 상태 검증을 `Client.UserInitiatedShutdown`으로 실패시킨다.
+- binding에 항목을 더하면 호스트의 승인 경로 두 곳(`owned()`와 worker 승인 `authorized()`)이 binding을 다시 만들어 digest를 비교한다. 한쪽만 고치면 worker 생성 전에 `connection_unavailable`이 된다.

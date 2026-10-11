@@ -13,7 +13,9 @@ import { bindingDigest, cliBindingSchema, cliReadSchema, type CliBinding } from 
 import { reportSnapshot, retainSnapshots } from './report-snapshots';
 import type { workerCommandSchema } from '../../../../packages/worker-protocol/commands';
 
-export const connectionConfigurationSchema = cliBindingSchema.omit({ actorId: true, connectionId: true }).extend({ configurationId: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/), label: z.string().min(1).max(128) }).strict();
+/** Deployment policy. `requireLoginNameMatch`: the AWS (Identity Center) session name must equal the signed web login name. Off by default. */
+export const identityPolicySchema = z.object({ requireLoginNameMatch: z.boolean().default(false) }).strict();
+export const connectionConfigurationSchema = cliBindingSchema.omit({ actorId: true, connectionId: true, loginName: true }).extend({ configurationId: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/), label: z.string().min(1).max(128) }).strict();
 type Configuration = z.infer<typeof connectionConfigurationSchema>;
 const connectionActionSchema = z.object({ requestKey: z.uuid(), operation: z.enum(['login', 'verify', 'inspect', 'directory', 'disconnect', 'logout', 'sync']), service: cliReadSchema.optional(), cursor: z.uuid().optional() }).strict().refine(value => (value.operation === 'inspect' ? Boolean(value.service) : value.service === undefined) && (value.operation === 'directory' || value.cursor === undefined));
 type ConnectionAction = z.infer<typeof connectionActionSchema>;
@@ -79,13 +81,22 @@ export class OrganizationConnections {
   private readonly schedule?: SyncSchedule;
   /** Connections whose AWS session this process has seen connected; a scheduled sync never starts a worker or login. */
   private readonly sessions = new Map<string, RecordValue>();
+  private readonly requireLoginNameMatch: boolean;
   private scheduler?: ReturnType<typeof setInterval>;
-  constructor(store: CloudStore, access: OrganizationWebAccess, transport: OrganizationWorkerTransport, configurations: unknown, now = Date.now, observations?: ObservationCache, options: { schedule?: unknown } = {}) {
+  constructor(store: CloudStore, access: OrganizationWebAccess, transport: OrganizationWorkerTransport, configurations: unknown, now = Date.now, observations?: ObservationCache, options: { schedule?: unknown; identityPolicy?: unknown } = {}) {
+    this.requireLoginNameMatch = identityPolicySchema.parse(options.identityPolicy ?? {}).requireLoginNameMatch;
     this.store = store; this.access = access; this.transport = transport; this.now = now; this.cache = observations;
     this.schedule = options.schedule === undefined ? undefined : syncScheduleSchema.parse(options.schedule);
     if (this.schedule && this.cache) { this.scheduler = setInterval(() => { void this.runSchedule().catch(() => undefined); }, 60_000); this.scheduler.unref(); }
     this.configs = z.array(connectionConfigurationSchema).max(1000).parse(configurations);
     if (new Set(this.configs.map(value => JSON.stringify([value.organizationId, value.workspaceId, value.configurationId]))).size !== this.configs.length) throw new Error('Duplicate organization connection configuration');
+  }
+  /** The server-built binding of one user's connection. With the identity policy on, the verified web login name is part of it, so the
+   * worker can refuse an AWS session approved by a different person; without a signed login name the connection is not created. */
+  private bindingFor<T extends object>(session: OrganizationWebSession, configuration: T, connectionId: string) {
+    const loginName = session.identity.loginName;
+    if (this.requireLoginNameMatch && !loginName) throw new CloudOperationError(403, 'web_login_name_missing', 'The web login carries no user name to match with the AWS user.');
+    return { ...configuration, actorId: session.identity.actorId, connectionId, ...(this.requireLoginNameMatch ? { loginName } : {}) };
   }
   private configuration(session: OrganizationWebSession, id: string) {
     const value = this.configs.find(item => session.context.owner.kind === 'organization' && item.organizationId === session.context.owner.organizationId && item.workspaceId === session.context.workspaceId && item.configurationId === id);
@@ -106,7 +117,9 @@ export class OrganizationConnections {
     const config = this.configs.find(value => value.configurationId === record.configurationId && value.organizationId === binding.organizationId && value.workspaceId === binding.workspaceId);
     if (!config) throw unavailable();
     const { configurationId: _, label: __, ...scope } = config;
-    if (bindingDigest({ ...scope, connectionId: binding.connectionId, actorId: binding.actorId }) !== expected) throw unavailable();
+    // With the identity policy on, the stored (and per-request re-verified) login name is part of the expected binding; without one the connection is refused.
+    if (this.requireLoginNameMatch && !binding.loginName) throw unavailable();
+    if (bindingDigest({ ...scope, connectionId: binding.connectionId, actorId: binding.actorId, ...(this.requireLoginNameMatch ? { loginName: binding.loginName } : {}) }) !== expected) throw unavailable();
     return { record, revision: { revision: digest({ binding: expected, version: member.data.version, roles: member.data.roles }) } };
   }
   private async invoke(binding: CliBinding, command: Parameters<OrganizationWorkerTransport['invoke']>[1]) {
@@ -123,7 +136,7 @@ export class OrganizationConnections {
     if (!value || !value.enabled || value.binding.actorId !== session.identity.actorId || session.context.owner.kind !== 'organization'
       || value.binding.organizationId !== session.context.owner.organizationId || value.binding.workspaceId !== session.context.workspaceId) throw unavailable();
     const { configurationId: _, label: __, ...configuration } = this.configuration(session, value.configurationId);
-    if (bindingDigest(value.binding) !== value.digest || bindingDigest({ ...configuration, actorId: session.identity.actorId, connectionId: id }) !== value.digest) throw unavailable();
+    if (bindingDigest(value.binding) !== value.digest || bindingDigest(this.bindingFor(session, configuration, id)) !== value.digest) throw unavailable();
     return value;
   }
   private view(value: RecordValue) {
@@ -142,7 +155,7 @@ export class OrganizationConnections {
   async create(session: OrganizationWebSession, input: unknown) {
     const request = z.object({ configurationId: z.string(), requestKey: z.uuid() }).strict().parse(input);
     const { configurationId, label: _, ...configuration } = this.configuration(session, request.configurationId);
-    const binding = cliBindingSchema.parse({ ...configuration, actorId: session.identity.actorId, connectionId: randomUUID() });
+    const binding = cliBindingSchema.parse(this.bindingFor(session, configuration, randomUUID()));
     const value: RecordValue = { binding, configurationId, digest: bindingDigest(binding), enabled: true, createdAt: new Date(this.now()).toISOString() };
     const indexKey = `connection-index:${digest(scope(session))}`, retryKey = `connection-create:${digest([...scope(session), request.requestKey])}`, fingerprint = digest({ configurationId, ...configuration });
     return this.store.transact(async tx => {
@@ -157,7 +170,7 @@ export class OrganizationConnections {
       for (const id of ids) {
         const existing = await tx.get<RecordValue>(recordKey(id));
         if (existing?.enabled && existing.configurationId === configurationId && existing.binding.actorId === session.identity.actorId) {
-          if (bindingDigest(existing.binding) === bindingDigest({ ...configuration, actorId: session.identity.actorId, connectionId: id }) && existing.digest === bindingDigest(existing.binding)) {
+          if (bindingDigest(existing.binding) === bindingDigest(this.bindingFor(session, configuration, id)) && existing.digest === bindingDigest(existing.binding)) {
             const owned = await this.owned(tx, session, id); tx.put(retryKey, { fingerprint, id }); return this.view(owned);
           }
           stale.push({ id, record: existing });

@@ -108,6 +108,13 @@ inspect는 등록된 서비스(`alarms`·`metrics`·`ec2`·`eks`·`rds`·`elasti
 
 `"schedule": { "syncEveryMinutes": 60 }`(30~1440분). 호스트가 1분마다 확인해, 이 프로세스에서 AWS 세션이 연결된 것으로 확인된 연결 중 마지막 동기화가 간격보다 오래된 연결의 동기화를 시작한다. 사용자 본인의 Device Code 세션(worker)만 쓰며 worker 생성·로그인은 하지 않는다. 세션이 끝나거나(로그아웃·만료·호스트 재시작) 구성원·설정 확인에 실패하면 그 연결은 예약에서 빠진다. 세션 길이는 Identity Center의 세션 지속 시간 설정을 따른다. 사람이 로그인하지 않은 상태의 무인 수집(서비스 역할)은 데이터 가시성 정책과 함께 회사 배포 단계에서 설계한다.
 
+## 웹 사용자와 AWS 승인자 동일인 검사 (identityPolicy)
+
+- **설정:** 배포 JSON 최상위에 `"identityPolicy": { "requireLoginNameMatch": true }`(기본 꺼짐). 켜면 웹 로그인의 서명된 로그인 이름(SAML bridge는 `name` 클레임 = 이메일 또는 NameID, 외부 OIDC는 검증기 설정 `loginNameClaim`, 예: `email`)이 연결 binding에 서버 값으로 들어가고, worker가 STS 확인 때 AWS 세션 이름(Identity Center 사용자 이름, ARN의 마지막 구간)과 대소문자 무시로 비교한다. 다르면 `web_identity_mismatch`로 연결을 거부한다(웹에는 A, Device Code는 B가 승인한 경우).
+- **전제:** 웹 로그인 이름과 Identity Center 사용자 이름이 같은 값이어야 한다(같은 Identity Center를 쓰고 NameID/이메일이 사용자 이름과 같을 때). 다르면 서버에 매핑 규칙이 따로 필요하다(미구현).
+- **효과 범위:** 로그인 이름이 없는 웹 신원은 연결을 만들 수 없다(`web_login_name_missing`). 켜기 전에 만든 연결은 binding에 이름이 없어 사용할 수 없게 되므로(`connection_unavailable`) 앱 연결을 해제하고 다시 만든다.
+- **worker 이미지:** binding에 `loginName`이 늘어 형식이 바뀌므로 worker 이미지를 다시 빌드하고 `imageId`를 바꾼 뒤 호스트를 재시작한다.
+
 ## 런북 실행 (runbooks)
 
 - **설정:** 연결 항목에 `"runbooks": { "roleName": "<런북 전용 permission set>", "allowed": ["connectivity-check", "ec2-start", "ec2-restart", "ec2-stop"] }`. 카탈로그는 코드에 고정(`packages/contracts/aws/runbooks.ts`)이며 문서 이름·파라미터를 요청에서 받지 않는다. 승인 정책은 `"runbookPolicy": { "allowSelfApproval": false }`(기본 2인). 이 값을 바꾸면 binding이 바뀌어 사용자는 연결을 새로 등록한다.

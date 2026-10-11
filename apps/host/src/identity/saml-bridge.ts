@@ -70,7 +70,7 @@ export function createSamlBridge(input: unknown, options: { publicOrigin: string
   const browserOidc: BrowserOidcConfiguration = { issuer: config.issuer, clientId: config.clientId, authorizationEndpoint: `${origin}/api/organizations/saml/authorize`,
     tokenEndpoint: `${origin}/api/organizations/saml/token`, scope: 'openid', bearer: 'id_token' };
   const verifierConfig: OidcVerifierConfig = { kind: 'oidc', issuer: config.issuer, audience: config.clientId, algorithms: ['ES256'],
-    jwks: { keys: [{ ...publicJwk, kid, kty: 'EC' }] }, maxLifetimeSeconds: config.sessionSeconds };
+    jwks: { keys: [{ ...publicJwk, kid, kty: 'EC' }] }, maxLifetimeSeconds: config.sessionSeconds, loginNameClaim: 'name' };
   const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' };
   const redirect = (response: ServerResponse, location: string) => { response.writeHead(303, { ...headers, Location: location }); response.end(); };
   const fail = (response: ServerResponse, status: number, code: string) => { response.writeHead(status, { ...headers, 'Content-Type': 'application/json; charset=utf-8' }); response.end(JSON.stringify({ code })); };

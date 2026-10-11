@@ -5,7 +5,8 @@ import type { VerifiedCloudContext } from '../../../../packages/contracts/access
 import type { CloudStore, CloudTransaction } from '../storage/store';
 
 const id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/);
-export type VerifiedWebIdentity = Readonly<{ actorId: string; expiresAt: number }>;
+/** `loginName` is a signed login claim (for example the e-mail) the server may compare with the AWS session name; it never selects an actor or a role. */
+export type VerifiedWebIdentity = Readonly<{ actorId: string; expiresAt: number; loginName?: string }>;
 /** Implementations must verify signature, issuer/audience, expiry and provider revocation. */
 export interface WebIdentityVerifier { verify(token: string): Promise<VerifiedWebIdentity> }
 export function identityActor(issuer: string, subject: string, tenant = '') {

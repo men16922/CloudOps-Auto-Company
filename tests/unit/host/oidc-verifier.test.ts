@@ -115,3 +115,16 @@ test('verifier configuration requires https issuer/JWKS and bounded settings', (
     assert.equal(oidcVerifierConfigSchema.safeParse({ ...base, ...invalid }).success, false, JSON.stringify(invalid));
   }
 });
+
+test('an optional login-name claim is returned for the server-side web/AWS user match, never used for the actor', async () => {
+  const plain = await verifier().verify(token({ claims: { email: 'employee-a@example.invalid' } }));
+  assert.equal('loginName' in plain, false);
+  const named = verifier({ loginNameClaim: 'email' });
+  const identity = await named.verify(token({ claims: { email: 'employee-a@example.invalid' } }));
+  assert.equal(identity.loginName, 'employee-a@example.invalid');
+  assert.equal(identity.actorId, plain.actorId);
+  // Missing, non-string or oversized values are ignored rather than trusted.
+  assert.equal('loginName' in await named.verify(token()), false);
+  assert.equal('loginName' in await named.verify(token({ claims: { email: 42 } })), false);
+  assert.equal('loginName' in await named.verify(token({ claims: { email: 'x'.repeat(200) } })), false);
+});

@@ -42,6 +42,8 @@ function ConnectionView({ controller, scope, view, viewHref, pageTitle }: { cont
   const readProblem = Boolean(value.error?.startsWith('read_'));
   const errors: Record<string, [string, string]> = {
     web_sign_in_required: ['웹 로그인이 만료됐습니다. 다시 로그인하세요.', 'Web sign-in has expired. Sign in again.'],
+    web_identity_mismatch: ['웹에 로그인한 사용자와 AWS에서 승인한 사용자가 다릅니다. 같은 사용자로 AWS Device Code 로그인을 다시 하세요.', 'The user signed in to the web differs from the user who approved AWS sign-in. Sign in with AWS Device Code as the same user.'],
+    web_login_name_missing: ['웹 로그인 정보에 사용자 이름이 없어 AWS 사용자와 대조할 수 없습니다. 운영자에게 로그인 설정 확인을 요청하세요.', 'The web login carries no user name to match with the AWS user. Ask an operator to check the login configuration.'],
     organization_access_denied: ['조직 접근 권한을 확인할 수 없어 계정 정보를 지웠습니다.', 'Organization access could not be verified. Account data has been cleared.'],
     worker_unavailable: ['전용 AWS 연결 환경을 시작하지 못했습니다. 잠시 후 다시 로그인하고, 계속되면 운영자에게 worker 상태 확인을 요청하세요.', 'The isolated AWS connection worker could not be started. Sign in again shortly; if it persists, ask an operator to check the worker.'],
     aws_session_required: ['AWS 세션이 없습니다. 호스트가 다시 시작됐거나 세션이 끝났을 수 있습니다. AWS Device Code 로그인으로 다시 연결하세요. 저장된 결과는 그대로 표시됩니다.', 'There is no AWS session. The host may have restarted or the session ended. Connect again with AWS Device Code sign-in; saved results stay visible.'],

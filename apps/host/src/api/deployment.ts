@@ -5,6 +5,7 @@ import type { ObservationCache } from '../connections/observation-cache';
 import { webConfigurationSchema } from '../../../../packages/contracts/web-config';
 import { connectionConfigurationSchema, syncScheduleSchema } from '../connections/connections';
 import { runbookPolicySchema } from '../runbooks/runbooks';
+import { identityPolicySchema } from '../connections/connections';
 import { createOrganizationWorkerRuntime, type OrganizationWorkerProvisioner } from '../workers/supervisor';
 import { createOrganizationApiServer, organizationHttpServer, organizationRequestListener } from './routes';
 import { createSamlBridge, samlBridgeConfigSchema } from '../identity/saml-bridge';
@@ -29,6 +30,7 @@ export const organizationDeploymentSchema = z.object({
   schedule: syncScheduleSchema.optional(),
   /** Runbook approval policy (two-person by default). Which runbooks a payer allows lives in its connection's `runbooks`. */
   runbookPolicy: runbookPolicySchema.optional(),
+  identityPolicy: identityPolicySchema.optional(),
 }).strict().superRefine((value, context) => {
   if (value.samlBridge && (!value.web.configured || value.web.identity.oidc)) {
     context.addIssue({ code: 'custom', path: ['samlBridge'], message: 'The SAML bridge needs a configured company web identity without explicit oidc settings.' });
@@ -70,7 +72,7 @@ export function composeOrganizationApi(options: OrganizationCompositionOptions) 
       async close() { await new Promise<void>(resolve => server.close(() => resolve())); } };
   }
   const access = new OrganizationWebAccess(verifier, options.store, options.now);
-  const runtime = createOrganizationWorkerRuntime({ store: options.store, access, configurations: deployment.connections, provisioner: options.provisioner, now: options.now, observations: options.observations, schedule: deployment.schedule, runbookPolicy: deployment.runbookPolicy });
+  const runtime = createOrganizationWorkerRuntime({ store: options.store, access, configurations: deployment.connections, provisioner: options.provisioner, now: options.now, observations: options.observations, schedule: deployment.schedule, runbookPolicy: deployment.runbookPolicy, identityPolicy: deployment.identityPolicy });
   const web = bridge && deployment.web.configured ? { ...deployment.web, identity: { method: 'company' as const, oidc: bridge.browserOidc } } : deployment.web;
   const services = { access, connections: runtime.connections, runbooks: runtime.runbooks, publicOrigin: deployment.publicOrigin, web };
   const api = organizationRequestListener(services);
