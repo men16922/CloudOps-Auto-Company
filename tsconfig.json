@@ -24,36 +24,14 @@
       "vite/client"
     ]
   },
-  "files": [
-    "src/company-main.tsx",
-    "src/vite-env.d.ts",
-    "server/modules/aws/organization/index.ts",
-    "server/modules/aws/organization/organization-cli-main.ts",
-    "server/organization-api.test.ts",
-    "server/organization-cli.test.ts",
-    "server/organization-directory.test.ts",
-    "server/organization-web-client.test.ts",
-    "server/organization-worker-docker.test.ts",
-    "server/organization-worker-leases.test.ts",
-    "server/organization-worker-process.test.ts",
-    "server/organization-worker-router.test.ts",
-    "server/organization-worker-supervisor.test.ts",
-    "tests/fixtures/organization-web.tsx",
-    "server/organization-local-main.ts",
-    "server/oidc-web-identity.test.ts",
-    "server/organization-deployment.test.ts",
-    "server/oidc-web-client.test.ts",
-    "server/cloud-store.test.ts",
-    "server/cloud-dynamodb-store.test.ts",
-    "tests/opt-in/dynamodb-local.conformance.ts",
-    "tests/opt-in/dynamodb-aws.conformance.ts",
-    "server/organization-saml-bridge.test.ts",
-    "server/operations-assessment.test.ts",
-    "server/organization-alerts.test.ts",
-    "server/organization-reads.test.ts",
-    "server/organization-report.test.ts",
-    "server/organization-sync-host.test.ts",
-    "server/organization-sync.test.ts",
-    "server/smtp-mail.test.ts"
+  "include": [
+    "apps/web/src",
+    "apps/host/src",
+    "apps/worker/src",
+    "packages",
+    "tests/unit",
+    "tests/contract",
+    "tests/browser/fixtures",
+    "tests/opt-in/*.ts"
   ]
 }

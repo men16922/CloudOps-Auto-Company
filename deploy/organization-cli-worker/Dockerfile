@@ -4,13 +4,14 @@ FROM node:24.19.0-bookworm-slim AS build
 WORKDIR /build
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts --no-audit --no-fund
-COPY server ./server
-COPY src/domain ./src/domain
-COPY src/modules/aws/domain ./src/modules/aws/domain
-COPY scripts/build-cli-worker.mjs ./scripts/build-cli-worker.mjs
-COPY scripts/company-build-policy.mjs ./scripts/company-build-policy.mjs
+# Only the worker app and the packages it shares with the host (no web, host or test code).
+COPY apps/worker ./apps/worker
+COPY packages/contracts ./packages/contracts
+COPY packages/worker-protocol ./packages/worker-protocol
+COPY scripts/build/build-cli-worker.mjs ./scripts/build/build-cli-worker.mjs
+COPY scripts/build/company-build-policy.mjs ./scripts/build/company-build-policy.mjs
 COPY tsconfig.json ./tsconfig.json
-RUN node scripts/build-cli-worker.mjs
+RUN node scripts/build/build-cli-worker.mjs
 
 FROM node:24.19.0-bookworm-slim
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin cloudops-worker \

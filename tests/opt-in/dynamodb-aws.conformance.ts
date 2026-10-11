@@ -1,11 +1,11 @@
 import { test, after, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { identityActor, OrganizationWebAccess } from '../../server/cloud-auth';
-import { DynamoDbCloudStore, environmentCredentials } from '../../server/cloud-dynamodb-store';
-import { cloudStoreConformance } from '../../server/cloud-store-conformance';
-import type { CloudStore } from '../../server/cloud-store';
-import { OrganizationConnections } from '../../server/modules/aws/organization/organization-connections';
+import { identityActor, OrganizationWebAccess } from '../../apps/host/src/identity/web-access';
+import { DynamoDbCloudStore, environmentCredentials } from '../../apps/host/src/storage/dynamodb-store';
+import { cloudStoreConformance } from '../contract/storage/store-conformance';
+import type { CloudStore } from '../../apps/host/src/storage/store';
+import { OrganizationConnections } from '../../apps/host/src/connections/connections';
 
 // Opt-in, explicitly approved runs only: creates ONE temporary provisioned 5/5 table, runs the CloudStore
 // conformance and registry flow with synthetic data under per-test key prefixes, then deletes the table.

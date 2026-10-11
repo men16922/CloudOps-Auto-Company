@@ -8,6 +8,6 @@ check:
 build:
 	npm run build
 test:
-	npm run test:server
+	npm run test:unit
 dev:
 	npm run dev
