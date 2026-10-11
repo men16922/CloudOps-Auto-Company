@@ -1,11 +1,13 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createServer as createTlsServer } from 'node:https';
 import { once } from 'node:events';
+import { statSync } from 'node:fs';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { z } from 'zod';
 import { OrganizationWebAccess, membershipSchema } from './cloud-auth';
 import type { CloudStore } from './cloud-store';
+import type { ObservationCache } from './observation-cache';
 import { OidcJwtVerifier, oidcVerifierConfigSchema, type OidcVerifierOptions } from './oidc-web-identity';
 import { composeOrganizationApi, organizationDeploymentSchema } from './modules/aws/organization/organization-deployment';
 import { DockerOrganizationWorkerProvisioner } from './modules/aws/organization/organization-worker-docker';
@@ -53,6 +55,10 @@ export function deploymentSummary(deploymentInput: unknown, webIdentity?: unknow
     if (browser && new URL(browser.tokenEndpoint).protocol === 'http:') warnings.push('browser OIDC endpoints use http loopback; use https outside local verification.');
   }
   if (new URL(deployment.publicOrigin).protocol === 'http:') warnings.push('publicOrigin is http loopback; production requires https.');
+  const email = deployment.notifications?.email;
+  // The password file is checked for presence and permissions only; its content is never read here.
+  const passwordFile = email ? (() => { try { const info = statSync(email.smtp.passwordFile); return !info.isFile() ? 'missing' : info.mode & 0o077 ? 'too-permissive' : 'ok'; } catch { return 'missing'; } })() : undefined;
+  if (email && passwordFile !== 'ok') warnings.push(`SMTP password file is ${passwordFile}: create it with mode 0600 before alerts can be sent.`);
   return {
     publicOrigin: deployment.publicOrigin.startsWith('https:') ? `https://${host(deployment.publicOrigin)}` : deployment.publicOrigin,
     web: deployment.web.configured ? { scope: `${deployment.web.scope.organizationId}/${deployment.web.scope.workspaceId}`, browserOidc: browser ? { bearer: browser.bearer, scope: browser.scope } : null } : null,
@@ -60,6 +66,8 @@ export function deploymentSummary(deploymentInput: unknown, webIdentity?: unknow
     verifier: verifierConfig ? { algorithms: verifierConfig.algorithms, jwks: 'uri' in verifierConfig.jwks ? 'remote' : 'static', tenant: Boolean(verifierConfig.tenant) } : null,
     connections: deployment.connections.map(item => ({ configurationId: item.configurationId, account: mask(item.accountId), roleName: item.roleName, region: item.region,
       ssoRegion: item.ssoRegion, startUrlHost: host(item.startUrl), directory: Boolean(item.directory) })),
+    notifications: email ? { email: { relay: `${host(`https://${email.smtp.host}`)}:${email.smtp.port} ${email.smtp.security}`, passwordFile,
+      routes: email.routes.map(route => ({ configurationId: route.configurationId, recipients: route.to.length, minSeverity: route.minSeverity, detail: route.detail })) } } : null,
     warnings,
   };
 }
@@ -68,14 +76,14 @@ export function deploymentSummary(deploymentInput: unknown, webIdentity?: unknow
  * It has no TLS, proxy or production store and must not be exposed beyond this machine.
  */
 export async function startLocalOrganizationHost(options: { deployment: unknown; webIdentity?: unknown; store: CloudStore; webRoot: string;
-  host: string; port: number; verifierOptions?: OidcVerifierOptions; provisioner?: OrganizationWorkerProvisioner; now?: () => number;
+  host: string; port: number; verifierOptions?: OidcVerifierOptions; provisioner?: OrganizationWorkerProvisioner; now?: () => number; observations?: ObservationCache;
   /** Optional TLS (PEM). Required when the IdP refuses an http loopback ACS; publicOrigin then uses https. */
   tls?: { cert: string; key: string } }) {
   const { host, port } = localHostSchema.parse({ host: options.host, port: options.port });
   const { deployment, verifierConfig, browser } = checkedConfiguration(options.deployment, options.webIdentity);
   const verifier = verifierConfig && new OidcJwtVerifier(verifierConfig, options.verifierOptions);
   // A SAML bridge composes its own verifier inside composeOrganizationApi.
-  const composition = composeOrganizationApi({ deployment, store: options.store, verifier, provisioner: options.provisioner, now: options.now });
+  const composition = composeOrganizationApi({ deployment, store: options.store, verifier, provisioner: options.provisioner, now: options.now, observations: options.observations });
   const webHeaders = securityHeaders(browser ? [new URL(browser.tokenEndpoint).origin] : []);
   const scheme = options.tls ? 'https' : 'http';
   if (composition.deployment.publicOrigin !== `${scheme}://${host}:${port}`) { await composition.close(); throw new Error(`publicOrigin must be ${scheme}://${host}:${port} for the local host.`); }

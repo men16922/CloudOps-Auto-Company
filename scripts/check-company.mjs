@@ -119,15 +119,23 @@ async function checkLocalHost(browser) {
     const popupOpened = context.waitForEvent('page');
     await page.getByRole('button', { name: '조직 웹 로그인', exact: true }).click();
     const popup = await popupOpened;
-    await expect(page.getByText('Synthetic Employee', { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('button', { name: '조직 프로필 열기' })).toBeVisible({ timeout: 10_000 });
+    await page.getByRole('button', { name: '조직 프로필 열기' }).click(); await expect(page.getByText('Synthetic Employee', { exact: true })).toBeVisible(); await page.keyboard.press('Escape');
     await expect.poll(() => popup.isClosed()).toBe(true);
-    await expect(page.getByText('이 사용자에게 등록된 연결이 없습니다. 허용된 계정·역할을 선택하세요.', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: /^허용된 AWS 연결/ }).click();
-    await page.getByRole('option', { name: /Synthetic AWS read access · 123456789012/ }).click();
-    await page.getByRole('button', { name: '내 연결 추가', exact: true }).click();
-    await expect(page.getByRole('button', { name: '123456789012', exact: true })).toBeVisible();
+    // The single permitted payer is preselected; one click registers the connection and tries Device Code.
+    await page.getByRole('button', { name: '조직 프로필 열기' }).click();
+    await expect(page.getByRole('button', { name: /^Payer 선택/ })).toContainText('Synthetic AWS read access · 123456789012');
+    await page.keyboard.press('Escape'); await expect(page.getByText('AWS 로그인이 필요합니다', { exact: true })).toBeVisible(); // in-page prompt before any AWS session
+    const devicePopup = context.waitForEvent('page');
+    await page.getByRole('button', { name: 'AWS Device Code 로그인', exact: true }).click();
+    const blank = await devicePopup;
+    await expect(page.getByText(/^전용 AWS 연결 환경을 시작하지 못했습니다\./)).toBeVisible(); // no provisioner in this host
+    await expect(page.getByRole('button', { name: '같은 요청 결과 확인' })).toHaveCount(0); // an unknown request is not replayed
+    await expect.poll(() => blank.isClosed()).toBe(true);
+    await expect(page.getByText(/123456789012/).first()).toBeVisible();
     const stored = await page.evaluate(() => JSON.stringify([Object.entries(localStorage), Object.entries(sessionStorage)]));
     expect(stored).not.toMatch(/eyJ|code_verifier|code-\d/);
+    if (!(await page.getByRole('button', { name: '웹 로그아웃', exact: true }).isVisible())) await page.getByRole('button', { name: '조직 프로필 열기' }).click();
     await page.getByRole('button', { name: '웹 로그아웃', exact: true }).click();
     await expect(page.getByRole('button', { name: '조직 웹 로그인', exact: true })).toBeVisible();
     expect(idpCalls).toEqual(['GET /authorize', 'POST /token']); expect(problems).toEqual([]);
@@ -186,11 +194,12 @@ async function checkSamlLocalHost(browser) {
     const popupOpened = context.waitForEvent('page');
     await page.getByRole('button', { name: '조직 웹 로그인', exact: true }).click();
     const popup = await popupOpened;
-    await expect(page.getByText(nameId, { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('button', { name: '조직 프로필 열기' })).toBeVisible({ timeout: 10_000 });
+    await page.getByRole('button', { name: '조직 프로필 열기' }).click(); await expect(page.getByText(nameId, { exact: true })).toBeVisible(); await page.keyboard.press('Escape');
     await expect.poll(() => popup.isClosed()).toBe(true);
-    await expect(page.getByText('이 사용자에게 등록된 연결이 없습니다. 허용된 계정·역할을 선택하세요.', { exact: true })).toBeVisible();
     const stored = await page.evaluate(() => JSON.stringify([Object.entries(localStorage), Object.entries(sessionStorage)]));
     expect(stored).not.toMatch(/eyJ|SAMLResponse|code_verifier/);
+    if (!(await page.getByRole('button', { name: '웹 로그아웃', exact: true }).isVisible())) await page.getByRole('button', { name: '조직 프로필 열기' }).click();
     await page.getByRole('button', { name: '웹 로그아웃', exact: true }).click();
     await expect(page.getByRole('button', { name: '조직 웹 로그인', exact: true })).toBeVisible();
     expect(idpCalls).toEqual(['GET /sso']); expect(problems).toEqual([]);

@@ -4,7 +4,7 @@ import { lstat, mkdir, open, readFile, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { CloudOperationError } from '../../../../src/domain/cloud-workflow';
-import { bindingDigest, cliArguments, cliBindingSchema, cliConfig, cliFailure, type CliBinding, type CliRuntime } from './organization-cli-contract';
+import { bindingDigest, cliArguments, cliBindingSchema, cliConfig, cliFailure, cliTargetSchema, type CliBinding, type CliRuntime } from './organization-cli-contract';
 
 export const workerHome = '/home/cloudops-worker';
 const awsDirectory = `${workerHome}/.aws`;
@@ -27,13 +27,16 @@ async function fixedFile(path: string, content: string) {
   if (await readFile(path, 'utf8') !== content) throw cliFailure('worker_binding_changed', 503);
 }
 /** Provision only a new dedicated directory; never imports host CLI files or copies tokens. */
-export async function prepareCliDirectory(directory: string, input: unknown) {
+export const accountConfigPath = (directory: string, accountId: string) => join(directory, `config-a${cliTargetSchema.shape.accountId.parse(accountId)}`);
+export async function prepareCliDirectory(directory: string, input: unknown, accountId?: string) {
   const binding = cliBindingSchema.parse(input);
   if (!isAbsolute(directory)) throw cliFailure('worker_storage_invalid', 503);
   await ensureDirectory(directory);
   if (await realpath(directory) !== directory) throw cliFailure('worker_storage_invalid', 503);
   await fixedFile(join(directory, 'cloudops-binding.sha256'), `${bindingDigest(binding)}\n`);
   await fixedFile(join(directory, 'config'), cliConfig(binding));
+  // Each target account gets its own immutable config file (same SSO session and token cache, one extra profile).
+  if (accountId !== undefined && accountId !== binding.accountId) await fixedFile(accountConfigPath(directory, accountId), cliConfig(binding, accountId));
   await fixedFile(join(directory, 'credentials'), '');
   for (const parent of ['sso', 'cli']) { await ensureDirectory(join(directory, parent)); await ensureDirectory(join(directory, parent, 'cache')); }
 }
@@ -84,8 +87,12 @@ export function boundedCliProcess(spec: ProcessSpec, signal: AbortSignal, output
       if (failure) reject(failure);
       else if (code === 0) resolve({ stdout });
       else {
-        const name = /\b(AccessDeniedException|ExpiredTokenException|AWSOrganizationsNotInUseException|TooManyRequestsException)\b/.exec(stderr)?.[1];
-        reject(cliFailure(name === 'AccessDeniedException' ? 'sso_denied' : name === 'ExpiredTokenException' ? 'sso_expired' : name === 'AWSOrganizationsNotInUseException' ? 'organization_not_in_use' : name === 'TooManyRequestsException' ? 'cli_throttled' : 'cli_failed'));
+        const name = /\b(AccessDeniedException|ExpiredTokenException|AWSOrganizationsNotInUseException|TooManyRequestsException|AccessDenied|UnauthorizedOperation|ForbiddenException|AuthorizationError|Throttling|ThrottlingException|InvalidAccessException|SubscriptionRequiredException)\b/.exec(stderr)?.[1];
+        // Service-level denials (missing IAM permission for one API) are distinct from SSO denial. Security Hub reports "not enabled"
+        // as InvalidAccessException; AWS Health without a Business-level support plan as SubscriptionRequiredException.
+        reject(cliFailure(name === 'AccessDeniedException' ? 'sso_denied' : name === 'ExpiredTokenException' ? 'sso_expired' : name === 'AWSOrganizationsNotInUseException' ? 'organization_not_in_use'
+          : name === 'InvalidAccessException' ? 'service_not_enabled' : name === 'SubscriptionRequiredException' ? 'service_not_subscribed'
+          : name && ['TooManyRequestsException', 'Throttling', 'ThrottlingException'].includes(name) ? 'cli_throttled' : name ? 'access_denied' : 'cli_failed'));
       }
       stdout = ''; stderr = '';
     });
@@ -103,10 +110,14 @@ export async function createDedicatedCliRuntime(input: unknown): Promise<CliRunt
   guard(); await prepareCliDirectory(awsDirectory, binding);
   const env = cliEnvironment(awsDirectory, process.env);
   return {
-    async run(operation, signal, output, directoryQuery) {
-      guard(); await prepareCliDirectory(awsDirectory, binding);
-      return boundedCliProcess({ executable: '/usr/local/bin/aws', args: cliArguments(binding, operation, directoryQuery), env,
-        timeoutMs: operation === 'login' ? 600_000 : 30_000, maxBytes: operation === 'login' ? 32_768 : 512_000 }, signal, output);
+    async run(operation, signal, output, input, target) {
+      // Reads run one at a time, so the config can carry exactly the profile this run needs.
+      const account = operation === 'config-query' ? binding.inventory?.config?.accountId : target?.accountId;
+      guard(); await prepareCliDirectory(awsDirectory, binding, account);
+      const runEnv = account !== undefined && account !== binding.accountId ? { ...env, AWS_CONFIG_FILE: accountConfigPath(awsDirectory, account) } : env;
+      // Metric searches return up to 500 series per expression before the worker keeps the top entries.
+      return boundedCliProcess({ executable: '/usr/local/bin/aws', args: cliArguments(binding, operation, input, target), env: runEnv,
+        timeoutMs: operation === 'login' ? 600_000 : 20_000, maxBytes: operation === 'login' ? 32_768 : operation === 'metrics' || operation === 'config-query' ? 2_000_000 : 512_000 }, signal, output);
     },
   };
 }

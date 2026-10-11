@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { identityActor } from './cloud-auth';
 import { SqliteCloudStore } from './cloud-sqlite-store';
+import { FileObservationCache } from './observation-cache';
 import { DynamoDbCloudStore, environmentCredentials } from './cloud-dynamodb-store';
 import { deploymentSummary, dockerProvisionerFromConfig, provisionLocalMembership, reconcileLocalWorker, startLocalOrganizationHost } from './organization-local-host';
 
@@ -28,6 +29,7 @@ Environment
   CLOUDOPS_LOCAL_HOST    127.0.0.1 or localhost (default 127.0.0.1).
   CLOUDOPS_LOCAL_PORT    default 5176.
   CLOUDOPS_WEB_ROOT      built web directory (default dist-company).
+  CLOUDOPS_OBSERVATION_CACHE  local directory for the last read results per user connection (default .data/observations).
   CLOUDOPS_TLS_CERT_FILE / CLOUDOPS_TLS_KEY_FILE  optional PEM files; serve https (publicOrigin must be https://host:port).
   CLOUDOPS_DOCKER_WORKER_CONFIG  optional Docker driver config for an authorized isolation run; also requires
                          CLOUDOPS_ORGANIZATION_DOCKER_ENABLED=1. Absent: no provisioner, AWS login/inspect return worker_unavailable.`;
@@ -72,7 +74,8 @@ try {
     const provisioner = process.env.CLOUDOPS_DOCKER_WORKER_CONFIG ? dockerProvisionerFromConfig(store, readJson(process.env.CLOUDOPS_DOCKER_WORKER_CONFIG)) : undefined;
     const tls = process.env.CLOUDOPS_TLS_CERT_FILE && process.env.CLOUDOPS_TLS_KEY_FILE
       ? { cert: readFileSync(resolve(process.env.CLOUDOPS_TLS_CERT_FILE), 'utf8'), key: readFileSync(resolve(process.env.CLOUDOPS_TLS_KEY_FILE), 'utf8') } : undefined;
-    const local = await startLocalOrganizationHost({ deployment, webIdentity, store, webRoot: process.env.CLOUDOPS_WEB_ROOT ?? 'dist-company', host, port, provisioner, tls });
+    const local = await startLocalOrganizationHost({ deployment, webIdentity, store, webRoot: process.env.CLOUDOPS_WEB_ROOT ?? 'dist-company', host, port, provisioner, tls,
+      observations: new FileObservationCache(resolve(process.env.CLOUDOPS_OBSERVATION_CACHE ?? '.data/observations')) });
     console.log(`Local organization host ${local.origin} (identity: ${local.signIn}, worker provisioner: ${provisioner ? 'docker' : 'none'}).`);
     const stop = () => { void local.close().finally(() => { store.close(); process.exit(0); }); };
     // SIGHUP arrives when a wrapping shell exits; workers must still be fenced and retired.

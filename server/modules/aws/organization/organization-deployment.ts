@@ -1,11 +1,13 @@
 import { z } from 'zod';
 import { OrganizationWebAccess, type WebIdentityVerifier } from '../../../cloud-auth';
 import type { CloudStore } from '../../../cloud-store';
+import type { ObservationCache } from '../../../observation-cache';
 import { webConfigurationSchema } from '../../../../src/platform/web-config';
 import { connectionConfigurationSchema } from './organization-connections';
 import { createOrganizationWorkerRuntime, type OrganizationWorkerProvisioner } from './organization-worker-supervisor';
 import { createOrganizationApiServer, organizationHttpServer, organizationRequestListener } from './organization-api';
 import { createSamlBridge, samlBridgeConfigSchema } from './organization-saml-bridge';
+import { EmailAlerts, notificationsSchema, type AlertSender } from './organization-alerts';
 import { OidcJwtVerifier } from '../../../oidc-web-identity';
 
 const loopback = ['localhost', '127.0.0.1'];
@@ -26,6 +28,8 @@ export const organizationDeploymentSchema = z.object({
   connections: z.array(connectionConfigurationSchema).max(1000),
   /** Web sign-in through an IAM Identity Center SAML 2.0 application; server-only, never sent to the browser. */
   samlBridge: samlBridgeConfigSchema.optional(),
+  /** Server-only alert delivery (SMTP relay and recipients per payer configuration); never sent to the browser. */
+  notifications: notificationsSchema.optional(),
 }).strict().superRefine((value, context) => {
   if (value.samlBridge && (!value.web.configured || value.web.identity.method !== 'company' || value.web.identity.oidc)) {
     context.addIssue({ code: 'custom', path: ['samlBridge'], message: 'The SAML bridge needs a configured company web identity without explicit oidc settings.' });
@@ -41,6 +45,9 @@ export const organizationDeploymentSchema = z.object({
     if (seen.has(connection.configurationId)) context.addIssue({ code: 'custom', path: ['connections', index, 'configurationId'], message: 'Duplicate configuration.' });
     seen.add(connection.configurationId);
   });
+  value.notifications?.email?.routes.forEach((route, index) => {
+    if (!seen.has(route.configurationId)) context.addIssue({ code: 'custom', path: ['notifications', 'email', 'routes', index, 'configurationId'], message: 'Routes must name a registered connection configuration.' });
+  });
 });
 export type OrganizationDeployment = z.infer<typeof organizationDeploymentSchema>;
 
@@ -51,6 +58,10 @@ export type OrganizationCompositionOptions = {
   verifier?: WebIdentityVerifier;
   /** Company infrastructure driver. Absent means worker operations return worker_unavailable. */
   provisioner?: OrganizationWorkerProvisioner;
+  /** Optional host-chosen cache of the last read results per user connection. */
+  observations?: ObservationCache;
+  /** Test seam for alert delivery; the default sends through the configured SMTP relay. */
+  sendMail?: AlertSender;
   now?: () => number;
 };
 
@@ -66,7 +77,9 @@ export function composeOrganizationApi(options: OrganizationCompositionOptions) 
       async close() { await new Promise<void>(resolve => server.close(() => resolve())); } };
   }
   const access = new OrganizationWebAccess(verifier, options.store, options.now);
-  const runtime = createOrganizationWorkerRuntime({ store: options.store, access, configurations: deployment.connections, provisioner: options.provisioner, now: options.now });
+  const alerts = deployment.notifications?.email && options.observations ? new EmailAlerts({ config: deployment.notifications.email, cache: options.observations, publicOrigin: deployment.publicOrigin,
+    labels: new Map(deployment.connections.map(connection => [connection.configurationId, connection.label])), now: options.now, send: options.sendMail }) : undefined;
+  const runtime = createOrganizationWorkerRuntime({ store: options.store, access, configurations: deployment.connections, provisioner: options.provisioner, now: options.now, observations: options.observations, alerts });
   const web = bridge && deployment.web.configured ? { ...deployment.web, identity: { method: 'company' as const, oidc: bridge.browserOidc } } : deployment.web;
   const services = { access, connections: runtime.connections, publicOrigin: deployment.publicOrigin, web };
   const api = organizationRequestListener(services);
@@ -78,6 +91,7 @@ export function composeOrganizationApi(options: OrganizationCompositionOptions) 
   return { deployment, configured: true as const, server, listener, access, runtime, bridge,
     async close() {
       await new Promise<void>(resolve => server.close(() => resolve()));
+      await runtime.connections.close();
       await runtime.supervisor.close();
     } };
 }

@@ -14,7 +14,7 @@ const binding: CliBinding = { connectionId: '44444444-4444-4444-8444-44444444444
 const unavailable = (error: unknown) => error instanceof CloudOperationError && error.code === 'worker_unavailable';
 function workerPipe(owner: CliBinding) {
   const input = new PassThrough(), output = new PassThrough(); let calls = 0, stops = 0;
-  const worker = new OrganizationCliWorker(owner, { run: async (operation, _signal, _output, query) => { calls++;
+  const worker = new OrganizationCliWorker(owner, { run: async (operation, _signal, _output, input) => { calls++; const query = input && 'parentId' in input ? input : undefined;
     if (operation === 'directory-organization') return { stdout: JSON.stringify({ Id: owner.directory!.awsOrganizationId, MasterAccountId: owner.accountId }) };
     if (operation === 'directory-parent') return { stdout: JSON.stringify({ Items: [{ Id: 'r-demo', Name: 'Synthetic root', Arn: `arn:aws:organizations::${owner.accountId}:root/${owner.directory!.awsOrganizationId}/r-demo` }], HasMore: false }) };
     if (operation === 'directory-accounts') return { stdout: JSON.stringify({ Items: [], HasMore: !query?.nextToken, NextToken: query?.nextToken ? null : 'private-synthetic-page-token' }) };

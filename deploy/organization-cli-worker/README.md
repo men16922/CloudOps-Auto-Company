@@ -8,7 +8,8 @@ For hosted execution, a trusted supervisor receives authenticated registry jobs 
 
 - One immutable server-owned connection binding per worker, with a generated profile and SSO session name.
 - A dedicated non-root Linux user with its own home, config, SSO token cache and AWS credential cache. The runtime rejects the shared API process and offline AWS calls.
-- Device Code login through AWS CLI; fixed STS and bounded Lambda/DynamoDB/CloudWatch alarm metadata reads. No arbitrary command, endpoint, profile or credential request field.
+- Device Code login through AWS CLI; fixed STS and bounded metadata reads: EC2, EKS (list, `describe-cluster-versions --include-all`, per-cluster `describe-cluster` within a 12 s budget), RDS, ElastiCache, MSK (`kafka list-clusters-v2`), CloudWatch alarms, Lambda, DynamoDB, and one `get-metric-data` call with fixed SEARCH expressions over standard AWS namespaces (last hour, 5-minute periods, worst 10 per metric). EKS names come from the worker's own list result and are validated; the metric window comes from the worker clock. No arbitrary command, endpoint, profile or credential request field.
+- A service-level denial/throttle/timeout with unchanged before/after STS identity fails only that read (`read_*`); a changed identity still invalidates the session. A metric series with data but an unresolvable resource label fails closed.
 - Account/Identity Center role validation after login, exact principal checks before/after reads, cancellation, bounded output/time and safe errors.
 - A private JSON-lines stdin/stdout protocol for a trusted controller. **Do not expose or proxy this pipe to a browser.** The controller must verify web identity, current organization membership and connection ownership for every request.
 - Disconnect retains this worker's cache; logout removes SSO caches in this worker. Previously issued IAM sessions may still remain valid. No cache is imported from the developer's `~/.aws`.
@@ -41,7 +42,7 @@ The bootstrap records a binding digest beside its own configuration. It rejects 
 
 ## Internal protocol
 
-Commands are strict JSON objects terminated by a newline. An `id` must be a UUID. Only `status`, `login`, `verify`, `inspect`, `directory`, `disconnect`, and `logout` are supported. Only `inspect` accepts `service` (`lambda`, `dynamodb`, `alarms`); only `directory` accepts a worker-issued cursor UUID. All account/role/region/profile values come from the mounted binding.
+Commands are strict JSON objects terminated by a newline. An `id` must be a UUID. Only `status`, `login`, `verify`, `inspect`, `directory`, `disconnect`, `logout`, `sync`, `sync-status` and `sync-unit` are supported. Only `inspect` accepts `service` (one of the fixed read services in `connectionServices`); only `directory` accepts a worker-issued cursor UUID; only `sync-unit` accepts a unit UUID from this worker's own sync. Security Hub "not enabled" and AWS Health "support plan required" are reported as the states `read_not_enabled` and `read_not_subscribed`, not as session failures. All account/role/region/profile values come from the mounted binding.
 
 ```json
 {"id":"33333333-3333-4333-8333-333333333333","operation":"status"}

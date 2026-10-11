@@ -72,3 +72,26 @@
 - DynamoDB store local host: `verify:dynamodb-local`가 DynamoDB Local에서 적합성 9/9와 함께, 빌드된 local host를 `CLOUDOPS_DYNAMODB_STORE`로 기동해 membership bootstrap·OIDC 인증·연결 생성 200·재조회 1건을 확인했다.
 - 운영자 회수 경로: `DockerOrganizationWorkerProvisioner.adoptInvestigatedContainer`와 `reconcile-worker --investigated-container`를 추가했다. 합성 driver 테스트에서 fence 전·부재 ID·다른 allocation·retire 후 재시도를 거부하고, 정상 경로에서는 제거·retire·lease 회수를 확인했다. 실제 Docker daemon 지연 시나리오는 **7/7**(잘못된 ID 거부, 조사한 늦은 container 제거·retire, 잔여 0).
 
+## 2026-10-11 추가: Payer 대시보드·원클릭 Device Code (개인 테스트 계정 실검증)
+
+- 원본 CloudOps-Automation 조사: Payer 대시보드와 SelectBox는 demo(합성)에만 있었고, 회사 edition에는 Payer 선택이 없었다. 코드 자동 입력 URL은 브라우저 SSO 경로에서만 썼다. demo 레이아웃을 참고해 회사 edition에 실제 데이터 기반으로 구현했다.
+- 실제 흐름: Identity Center SAML 웹 로그인 → Payer 미리 선택 → 'AWS Device Code 로그인' 한 번 → 새 창이 코드가 입력된 AWS 페이지로 열림 → 사용자 허용 → '접근 확인' → 조직 계정 탭 자동 로드(Root 직접 하위 계정 1·ACTIVE 1·OU 0, `ListAccountsForParent` 출처·시각 표시). 실제 계정명은 기록하지 않는다.
+- 발견·수정한 결함: 같은 configurationId의 설정이 바뀌면(directory 범위 추가) 이전 연결의 digest 불일치로 `create`가 404가 되어 새 연결을 만들 수 없었다. 이전 연결을 비활성화하고 index에서 제거한 뒤 새 연결을 등록하도록 고쳤다(회귀 테스트 추가). 요청 중 탭이 다시 마운트돼 결과가 사라지던 UI 문제와, 모바일 Tabs 스크롤 버튼의 이름 누락(axe)도 고쳤다.
+- **make check 종료 0**, 서버 **175/175**. 조직 웹 계약은 Payer 선택, 원클릭 팝업이 코드 URL로 이동하고 opener가 null인 것, 디렉터리 자동 로드, 탭, 접근성을 검증한다. 테스트의 AWS 도메인 요청은 합성 응답으로 가로챈다.
+- 남은 관찰: 서버 재시작 직후 첫 웹 로그인 클릭이 완료되지 않고 두 번째 클릭에서 완료되는 현상이 반복됐다(원인 미조사).
+
+## 2026-10-11 추가: 운영 대시보드·좌측 메뉴·조회 캐시 (개인 테스트 계정 실검증)
+
+- 실제 흐름: Identity Center SAML 웹 로그인 → 상단 조직 프로필에서 'AWS Device Code 로그인' → 코드가 입력된 AWS 페이지에서 사용자 허용 → '접근 확인' → directory·경보·Lambda·EC2·DynamoDB 자동 조회 → 요약 카드·조치/주의 항목·차트 위젯 표시 → 좌측 메뉴로 Lambda·EC2 상세 화면 확인. 실제 자원 이름과 개수는 기록하지 않는다.
+- EC2 조회는 처음에 `cli_failed`였다(AWS CLI가 `--no-paginate`와 `--max-items`를 함께 거부). `--cli-input-json '{"MaxResults":100}'`로 바꾼 뒤 실제 조회가 성공했다.
+- 호스트 재시작 후 AWS 로그인 전에도 로컬 디스크 캐시의 마지막 결과가 '캐시된 관측'으로 먼저 보이는 것을 확인했다. 캐시 파일은 0600, 디렉터리는 0700이고 사용자·연결별로 분리된다(서버 테스트). 연결된 상태로 새로 로그인하면 자동 새로고침이 캐시 로드를 막던 순서 결함을 발견해 고쳤다(`organization-web-client.test.ts` 회귀 테스트는 수정 전 순서에서 실패한다).
+- 차트 색(ALARM 빨강·데이터 없음/중지 회색·OK/실행 초록·기타 파랑)은 dataviz 검증 스크립트로 확인했다. 색각 이상·정상 시각 구분은 통과했다. 회색은 채도 하한과 대비 경고가 있어 항상 범례·라벨·상세 표와 함께 쓴다.
+- **make check 종료 0**, 서버 **180/180**. 조직 웹 계약은 상단 프로필 팝업, Payer 선택, 원클릭 팝업 URL과 opener null, 파생 조치 항목과 콘솔 링크, 위젯, 좌측 메뉴 상세 화면 이동, 디렉터리 탐색, 모바일 접근성(axe)을 검증한다.
+
+## 2026-10-11 추가: EC2·EKS·RDS·ElastiCache·MSK·CloudWatch 표준 지표 (개인 테스트 계정 실검증)
+
+- 워커 이미지를 다시 빌드하고(로컬 Docker, 기존 승인 범위) 호스트를 정상 종료(SIGTERM, worker 회수 확인) 후 재기동했다. 사용자가 Device Code를 승인한 뒤 자동 전체 조회가 directory·경보·표준 지표·EC2·EKS·RDS·ElastiCache·MSK·Lambda·DynamoDB 모두 오류 없이 끝났다. 이 계정에는 EKS/RDS/ElastiCache/MSK 자원이 없어 빈 상태로 표시됐다(값은 기록하지 않음).
+- 표준 지표 `get-metric-data`(고정 SEARCH 9개, `{AWS/Kafka,"Broker ID","Cluster Name"}` 포함)는 실제 계정에서 권한·구문 오류 없이 성공했다. 다만 지난 1시간 데이터 포인트가 없어, 데이터가 있을 때 동적 라벨(`${PROP('Dim.…')}`)이 자원 ID로 해석되는지는 이번에 관측하지 못했다. API 문서(MetricDataQuery.Label, 동적 라벨은 SEARCH 결과 각각에 적용)에 근거하며, 해석되지 않으면 `read_invalid_result`로 실패하도록 해 '데이터 없음'으로 오인되지 않게 했다. 부하가 있는 계정(회사 계정 포함)에서 확인이 남았다.
+- 성능 제약: 워커는 `--cpus=0.25`이고 CLI 실행 1회가 약 2초다. supervisor는 25초를 넘는 작업의 워커를 폐기하므로, 표준 지표는 호출 한 번으로 묶고 EKS 클러스터 상세는 12초 예산 안에서만 읽는다(나머지는 '상세 미수집'). 읽기 프로세스 제한 시간은 30초→20초로 줄였다.
+- **make check 종료 0**, 서버 **189/189**. 새 테스트: 고정 인자·EKS 이름/지표 입력 검증, 서비스 단위 거부 시 세션 유지와 신원 변경 시 무효화, EKS 지원 상태 병합·시간 예산, 지표 최악 10개·노드→클러스터 병합·라벨 실패 시 닫힘, EKS/RDS/ElastiCache/MSK/지표 판정. 조직 웹 계약은 좌측 메뉴(Serverless 하나, Lambda 단독 메뉴 없음)·EKS/RDS/지표 상세·MSK 권한 없음 표시와 모바일 접근성을 검증한다.
+

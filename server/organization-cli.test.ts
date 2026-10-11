@@ -58,18 +58,20 @@ test('two users have independent login/verification; cross-user or missing membe
   second.login.resolve(); await until(() => second.worker.status(context(b)).status === 'connected');
   assert.equal(first.worker.status(context()).userCode, undefined);
   const page = await first.worker.inspect(context(), 'lambda'); assert.equal(page.items[0].name, 'synthetic-resource'); assert.equal(page.hasMore, true);
-  assert.deepEqual(first.calls, ['login', 'identity', 'identity', 'lambda', 'identity']);
+  // Lambda's list API has no tags, so a non-empty page also reads its tag keys (Resource Groups Tagging API).
+  assert.deepEqual(first.calls, ['login', 'identity', 'identity', 'lambda', 'tagged-resources', 'identity']);
   assert.ok(!JSON.stringify(first.worker.status(context())).includes('AROA'));
 });
 
 test('device parser handles split chunks and rejects untrusted links, oversized output and unknown format', async t => {
   const parser = new DeviceInstructionParser(a); let result;
   for (const character of deviceOutput) result = parser.feed(character) ?? result;
-  assert.deepEqual(result, { userCode: 'DEMO-CODE', verificationUri: 'https://device.sso.us-east-1.amazonaws.com/' });
-  assert.deepEqual(new DeviceInstructionParser(a).feed(deviceOutput.replace('https://device.sso.us-east-1.amazonaws.com/?user_code=DEMO-CODE', `${a.startUrl}/#/device?user_code=DEMO-CODE`)), result);
+  assert.deepEqual(result, { userCode: 'DEMO-CODE', verificationUri: 'https://device.sso.us-east-1.amazonaws.com/', verificationUriComplete: 'https://device.sso.us-east-1.amazonaws.com/?user_code=DEMO-CODE' });
+  assert.deepEqual(new DeviceInstructionParser(a).feed(deviceOutput.replace('https://device.sso.us-east-1.amazonaws.com/?user_code=DEMO-CODE', `${a.startUrl}/#/device?user_code=DEMO-CODE`)),
+    { ...result, verificationUriComplete: `${a.startUrl}/#/device?user_code=DEMO-CODE` });
   // Real AWS CLI 2.30 output for an Identity Center portal (observed 2026-10-10; synthetic host/code here).
   const portalOutput = `Browser will not be automatically opened.\nPlease visit the following URL:\n\n${a.startUrl}/#/device\n\nThen enter the code:\n\nABCD-EFGH\n\nAlternatively, you may visit the following URL which will autofill the code upon loading:\n${a.startUrl}/#/device?user_code=ABCD-EFGH\n`;
-  assert.deepEqual(new DeviceInstructionParser(a).feed(portalOutput), { userCode: 'ABCD-EFGH', verificationUri: `${a.startUrl}/#/device` });
+  assert.deepEqual(new DeviceInstructionParser(a).feed(portalOutput), { userCode: 'ABCD-EFGH', verificationUri: `${a.startUrl}/#/device`, verificationUriComplete: `${a.startUrl}/#/device?user_code=ABCD-EFGH` });
   assert.throws(() => new DeviceInstructionParser(a).feed(portalOutput.replace(`${a.startUrl}/#/device\n`, `${a.startUrl}/#/other\n`)), code('invalid_device_link'));
   assert.throws(() => new DeviceInstructionParser(a).feed(deviceOutput.replace('?user_code=DEMO-CODE', '?user_code=EVIL-CODE')), code('invalid_device_link'));
   for (const link of ['https://evil.example/', 'https://device.sso.us-east-1.amazonaws.com.evil.example/', 'https://user@device.sso.us-east-1.amazonaws.com/', 'https://device.sso.us-east-1.amazonaws.com/?secret=oops']) {

@@ -7,9 +7,10 @@ import type { OrganizationCliWorker } from './organization-cli-worker';
 import { workerLeaseHandleSchema, type WorkerLeaseHandle } from './organization-worker-leases';
 
 export const workerCommandSchema = z.object({
-  id: z.uuid(), operation: z.enum(['status', 'login', 'verify', 'inspect', 'directory', 'disconnect', 'logout']),
-  service: cliReadSchema.optional(), cursor: z.uuid().optional(),
-}).strict().refine(value => (value.operation === 'inspect' ? Boolean(value.service) : value.service === undefined) && (value.operation === 'directory' || value.cursor === undefined));
+  id: z.uuid(), operation: z.enum(['status', 'login', 'verify', 'inspect', 'directory', 'disconnect', 'logout', 'sync', 'sync-status', 'sync-unit']),
+  service: cliReadSchema.optional(), cursor: z.uuid().optional(), unit: z.uuid().optional(),
+}).strict().refine(value => (value.operation === 'inspect' ? Boolean(value.service) : value.service === undefined) && (value.operation === 'directory' || value.cursor === undefined)
+  && (value.operation === 'sync-unit' ? Boolean(value.unit) : value.unit === undefined));
 
 /** Trusted controller pipe only. No HTTP listener, actor override, profile or raw command input. */
 export async function serveCliWorker(worker: OrganizationCliWorker, input: Readable, output: Writable, inputAllocation?: WorkerLeaseHandle) {
@@ -37,6 +38,9 @@ export async function serveCliWorker(worker: OrganizationCliWorker, input: Reada
       case 'directory': return worker.directory(context, command.cursor);
       case 'disconnect': return worker.disconnect(context);
       case 'logout': return worker.logout(context);
+      case 'sync': return worker.startSync(context);
+      case 'sync-status': return worker.syncStatus(context);
+      case 'sync-unit': return worker.syncUnit(context, command.unit!);
     }
   };
   const line = async (value: string) => {
@@ -45,7 +49,8 @@ export async function serveCliWorker(worker: OrganizationCliWorker, input: Reada
       const command = workerCommandSchema.parse(JSON.parse(value)); id = command.id;
       const canonical = JSON.stringify(command), prior = replies.get(id);
       if (prior && prior.input !== canonical) throw new CloudOperationError(409, 'request_key_conflict', 'Use a new request identifier.');
-      if (!prior && replies.size >= 1000) throw new CloudOperationError(429, 'worker_request_limit', 'Reconnect with a new worker.');
+      // Request ids stay idempotent for the most recent 1000 requests; older settled replies are forgotten (long syncs poll often).
+      if (!prior && replies.size >= 1000) { const oldest = replies.keys().next().value; if (oldest !== undefined) replies.delete(oldest); }
       const reply = prior ?? { input: canonical, result: Promise.resolve().then(() => execute(command)) };
       if (!prior) replies.set(id, reply);
       send(id, { ok: true, result: await reply.result });

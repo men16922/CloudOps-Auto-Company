@@ -10,6 +10,8 @@ export default function ConsoleHeader({ id, href, utilities, provider }: { id: s
     {provider ? <span className="console-provider" title={provider.name}><img src={provider.icon} alt={provider.name} /></span> : null}
     </nav>
     <div className="console-utilities"><TopNavigation visualContext="top-navigation" utilities={utilities} i18nStrings={{ overflowMenuTriggerText: t('메뉴', 'Menu'), overflowMenuTitleText: t('콘솔 도구', 'Console tools'), overflowMenuDismissIconAriaLabel: t('콘솔 도구 닫기', 'Close console tools') }} /></div>
+    {/* Module pages may portal their current context (e.g. the signed-in payer) here, left of the language selector. */}
+    <div id="console-context-slot" className="console-context-slot" />
     <form className="console-language" aria-label={t('표시 언어 설정', 'Display language settings')} onSubmit={event => event.preventDefault()}><LanguageSelector /></form>
   </div>;
 }

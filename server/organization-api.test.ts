@@ -12,6 +12,8 @@ import { OrganizationConnections, type OrganizationWorkerTransport } from './mod
 import { OrganizationCliWorker } from './modules/aws/organization/organization-cli-worker';
 import { createOrganizationApiServer } from './modules/aws/organization';
 import { CloudOperationError } from '../src/domain/cloud-workflow';
+import { FileObservationCache } from './observation-cache';
+import { readdir, stat } from 'node:fs/promises';
 
 const issuer = 'https://company.example.invalid';
 const config = { configurationId: 'aws-read', label: 'Synthetic AWS', organizationId: 'synthetic-org', workspaceId: 'workspace-a', startUrl: 'https://synthetic-example.awsapps.com/start', ssoRegion: 'us-east-1', region: 'ap-northeast-2', accountId: '123456789012', roleName: 'ReadOnlyAccess' };
@@ -36,7 +38,7 @@ async function fixture(t: TestContext, withDirectory = false) {
     if (transportOverride) return transportOverride(binding, command, signal);
     let worker = workers.get(binding.connectionId);
     if (!worker) {
-      worker = new OrganizationCliWorker(binding, { async run(operation, _signal, output, query) {
+      worker = new OrganizationCliWorker(binding, { async run(operation, _signal, output, input) { const query = input && 'parentId' in input ? input : undefined;
         if (operation === 'login') { output?.('https://device.sso.us-east-1.amazonaws.com/\nThen enter the code:\nDEMO-CODE\n'); return { stdout: '' }; }
         if (operation === 'identity') return { stdout: JSON.stringify({ Account: binding.accountId, Arn: `arn:aws:sts::${binding.accountId}:assumed-role/AWSReservedSSO_${binding.roleName}_0123456789abcdef/synthetic-session`, UserId: `SYNTHETIC:${binding.actorId}` }) };
         if (operation === 'logout') return { stdout: '' };
@@ -157,6 +159,19 @@ test('organization HTTP enforces Bearer membership and strict requests through t
   const nextPage = await request(`/${connection.id}/actions`, { operation: 'directory', cursor: observation.accounts.nextCursor }); assert.equal(nextPage.status, 200);
   const nextObservation = await nextPage.json(); assert.equal(nextObservation.accounts.pageNumber, 2); assert.equal(nextObservation.accounts.hasMore, false);
   assert.ok(!JSON.stringify(nextObservation).includes('synthetic-next-token'));
+  // Report history and saved views: owner-only reads; views change only by POST with the request key.
+  assert.deepEqual(await (await request(`/${connection.id}/report`)).json(), { snapshots: [] });
+  assert.equal((await request(`/${connection.id}/report`, { operation: 'save' })).status, 405);
+  assert.equal((await request(`/${connection.id}/views/eks`)).status, 404);
+  const savedView = await request(`/${connection.id}/views`, { operation: 'save', view: { name: 'Synthetic', page: 'ec2', accounts: [], regions: [], queries: {} } }); assert.equal(savedView.status, 200);
+  assert.deepEqual((await (await request(`/${connection.id}/views`)).json()).items.map((item: { view: { name: string } }) => item.view.name), ['Synthetic']);
+  assert.equal((await request(`/${connection.id}/views`, { operation: 'save', view: { name: 'x', page: 'shell', accounts: [], regions: [], queries: {} } })).status, 400);
+  assert.equal((await request(`/${connection.id}/views`, undefined, 'valid-b')).status, 404);
+  // Alert status is owner-only; without a notifications config the test message is refused and nothing is sent.
+  assert.deepEqual(await (await request(`/${connection.id}/alerts`)).json(), { configured: false, recipients: [], history: [] });
+  const notConfigured = await request(`/${connection.id}/alerts`, { operation: 'test' }); assert.equal(notConfigured.status, 409); assert.equal((await notConfigured.json()).code, 'alerts_not_configured');
+  assert.equal((await request(`/${connection.id}/alerts`, { operation: 'send', to: 'x@example.invalid' })).status, 400, 'the browser cannot choose recipients or content');
+  assert.equal((await request(`/${connection.id}/alerts`, undefined, 'valid-b')).status, 404);
   const logout = await request(`/${connection.id}/actions`, { operation: 'logout' }); assert.equal(logout.status, 200);
   assert.equal((await (await request(`/${connection.id}/status`)).json()).status, 'disconnected');
   s.revokeIdentity(); assert.equal((await request(`/${connection.id}/status`)).status, 401);
@@ -173,4 +188,40 @@ test('directory capability and changed parent are checked before dispatch, and r
   const changed = new OrganizationConnections(s.first, s.access, s.transport, [{ ...config, directory: { awsOrganizationId: 'o-synthetic1', parentId: 'r-other' } }], () => 1_800_000_000_000);
   await assert.rejects(changed.perform(session, own.id, command), errorCode('connection_unavailable')); assert.equal(s.calls.length, 2);
   await s.provision('employee-a', false, 2); await assert.rejects(s.connections.perform(session, own.id, command), errorCode('organization_access_denied'));
+});
+
+test('a changed trusted configuration retires the stale connection and registers a new one instead of failing', async t => {
+  const s = await fixture(t), session = await s.session();
+  const first = await s.connections.create(session, { configurationId: 'aws-read', requestKey: randomUUID() });
+  const changed = new OrganizationConnections(s.first, s.access, s.transport, [{ ...config, directory: { awsOrganizationId: 'o-synthetic1', parentId: 'r-demo' } }]);
+  assert.deepEqual((await changed.list(session)).items, [], 'the stale binding is not shown');
+  const second = await changed.create(session, { configurationId: 'aws-read', requestKey: randomUUID() });
+  assert.notEqual(second.id, first.id); assert.deepEqual(second.directory, { awsOrganizationId: 'o-synthetic1', parentId: 'r-demo' });
+  assert.deepEqual((await changed.list(session)).items.map(item => item.id), [second.id]);
+  const stale = await s.first.transact(tx => tx.get<{ enabled: boolean }>(`organization-connection:${first.id}`));
+  assert.equal(stale?.enabled, false, 'the stale connection is disabled so its worker authorization fails closed');
+  const { configurationId: _id, label: _label, ...staleScope } = config;
+  await assert.rejects(changed.workerAuthorization({ ...staleScope, actorId: session.identity.actorId, connectionId: first.id }), errorCode('connection_unavailable'));
+  assert.equal((await changed.create(session, { configurationId: 'aws-read', requestKey: randomUUID() })).id, second.id, 'the current connection is reused');
+});
+
+test('read results are cached per owned connection on local disk and re-validated before they are served', async t => {
+  const s = await fixture(t), session = await s.session(), other = await s.session('valid-b');
+  const root = await mkdtemp(join(tmpdir(), 'cloudops-observations-')), cacheDir = join(root, 'observations');
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const connections = new OrganizationConnections(s.first, s.access, s.transport, [config], Date.now, new FileObservationCache(cacheDir));
+  const connection = await connections.create(session, { configurationId: 'aws-read', requestKey: randomUUID() });
+  assert.deepEqual(await connections.observations(session, connection.id), { inventories: {} }, 'nothing cached yet and no worker is called');
+  await connections.perform(session, connection.id, { requestKey: randomUUID(), operation: 'login' }); await nextTurn();
+  await connections.perform(session, connection.id, { requestKey: randomUUID(), operation: 'inspect', service: 'lambda' });
+  const calls = s.calls.length, cached = await connections.observations(session, connection.id) as { savedAt: string; inventories: { lambda?: { items: Array<{ name: string }> } } };
+  assert.equal(cached.inventories.lambda?.items[0]?.name, 'synthetic-resource'); assert.ok(cached.savedAt);
+  assert.equal(s.calls.length, calls, 'serving the cache never invokes the worker');
+  await assert.rejects(connections.observations(other, connection.id), errorCode('connection_unavailable'));
+  const [file] = await readdir(cacheDir);
+  assert.equal((await stat(join(cacheDir, file!))).mode & 0o777, 0o600); assert.equal((await stat(cacheDir)).mode & 0o777, 0o700);
+  const changed = new OrganizationConnections(s.first, s.access, s.transport, [{ ...config, directory: { awsOrganizationId: 'o-synthetic1', parentId: 'r-demo' } }], Date.now, new FileObservationCache(cacheDir));
+  await assert.rejects(changed.observations(session, connection.id), errorCode('connection_unavailable'));
+  const next = await changed.create(session, { configurationId: 'aws-read', requestKey: randomUUID() });
+  assert.deepEqual(await changed.observations(session, next.id), { inventories: {} }, 'a changed binding never reuses the old cache entry');
 });

@@ -25,6 +25,11 @@
       "directory": {
         "awsOrganizationId": "o-synthetic1",
         "parentId": "r-demo"
+      },
+      "inventory": {
+        "regions": ["ap-northeast-2", "us-east-1"],
+        "maxAccounts": 50,
+        "requiredTags": ["Owner", "CostCenter", "Environment"]
       }
     }
   ]

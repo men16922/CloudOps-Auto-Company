@@ -47,6 +47,13 @@
     "server/cloud-dynamodb-store.test.ts",
     "tests/opt-in/dynamodb-local.conformance.ts",
     "tests/opt-in/dynamodb-aws.conformance.ts",
-    "server/organization-saml-bridge.test.ts"
+    "server/organization-saml-bridge.test.ts",
+    "server/operations-assessment.test.ts",
+    "server/organization-alerts.test.ts",
+    "server/organization-reads.test.ts",
+    "server/organization-report.test.ts",
+    "server/organization-sync-host.test.ts",
+    "server/organization-sync.test.ts",
+    "server/smtp-mail.test.ts"
   ]
 }

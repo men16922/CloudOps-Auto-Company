@@ -21,7 +21,7 @@ function fixture(input = binding) {
   };
   let now = Date.parse('2026-10-10T00:00:00Z');
   let identity = 'synthetic-a', held: CliOperation | undefined, release = () => {}, entered = false;
-  const runtime: CliRuntime = { async run(operation, signal, _output, query) {
+  const runtime: CliRuntime = { async run(operation, signal, _output, request) { const query = request && 'parentId' in request ? request : undefined;
     queries.push({ operation, query }); calls.push(operation); if (operation === held) { entered = true; await new Promise<void>(resolve => { release = resolve; }); }
     if (signal.aborted) throw cliFailure('cli_cancelled');
     if (operation === 'identity') return { stdout: JSON.stringify({ Account: input.accountId, Arn: `arn:aws:sts::${input.accountId}:assumed-role/AWSReservedSSO_${input.roleName}_0123456789abcdef/${identity}`, UserId: `SYNTHETIC:${identity}` }) };

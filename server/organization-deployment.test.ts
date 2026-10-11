@@ -48,7 +48,9 @@ async function listen(t: TestContext) {
 }
 const browserHeaders = (origin: string, extra: Record<string, string> = {}) => ({ Origin: origin, 'Sec-Fetch-Site': 'same-origin', ...extra });
 
+const email = { from: 'alerts@example.invalid', smtp: { host: 'smtp.example.invalid', port: 465, security: 'tls', username: 'alerts@example.invalid', passwordFile: '/synthetic/smtp-password' }, routes: [{ configurationId: 'aws-read', to: ['ops@example.invalid'] }] };
 test('the deployment example validates and unsafe or cross-scope deployments are rejected', () => {
+  assert.equal(organizationDeploymentSchema.parse({ ...example, notifications: { email } }).notifications?.email?.routes[0]?.minSeverity, 'warning', 'e-mail alerts are server settings with safe defaults');
   assert.equal(organizationDeploymentSchema.parse(example).connections.length, 1);
   const [connection] = example.connections;
   const invalid: unknown[] = [
@@ -61,6 +63,9 @@ test('the deployment example validates and unsafe or cross-scope deployments are
     { ...example, connections: [{ ...connection, startUrl: 'https://login.example.invalid/start' }] },
     { publicOrigin: example.publicOrigin, web: { configured: false }, connections: [connection] },
     { ...example, verifier: webIdentity },
+    { ...example, notifications: { email: { ...email, routes: [{ configurationId: 'not-registered', to: ['ops@example.invalid'] }] } } },
+    { ...example, notifications: { email: { ...email, smtp: { ...email.smtp, password: 'inline-secret' } } } },
+    { ...example, notifications: { slack: { webhook: 'https://hooks.example.invalid/x' } } },
   ];
   for (const value of invalid) assert.equal(organizationDeploymentSchema.safeParse(value).success, false, JSON.stringify(value).slice(0, 160));
   assert.ok(organizationDeploymentSchema.parse({ publicOrigin: 'http://127.0.0.1:5176', web: { configured: false }, connections: [] }));

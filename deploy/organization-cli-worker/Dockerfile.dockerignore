@@ -11,6 +11,8 @@
 !server/modules/aws/organization/
 !server/modules/aws/organization/organization-cli-*.ts
 !server/modules/aws/organization/organization-directory.ts
+!server/modules/aws/organization/organization-lifecycle.ts
+!server/modules/aws/organization/organization-sync.ts
 !server/modules/aws/organization/organization-worker-leases.ts
 !src/
 !src/domain/
@@ -19,4 +21,6 @@
 !src/modules/
 !src/modules/aws/
 !src/modules/aws/domain/
+!src/modules/aws/domain/connections.ts
 !src/modules/aws/domain/directory.ts
+!src/modules/aws/domain/inventory.ts
