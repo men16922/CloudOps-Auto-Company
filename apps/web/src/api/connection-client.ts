@@ -2,22 +2,17 @@ import { z } from 'zod';
 import { directorySnapshotSchema, type DirectorySnapshot } from '../../../../packages/contracts/aws/directory';
 import type { WebIdentity, WebIdentityClient } from '../identity/web-identity';
 import { webScopeSchema, type WebScope } from '../../../../packages/contracts/web-config';
-import { checkedDeviceLink, connectionListSchema, connectionObservationsSchema, connectionViewSchema, connectionStateSchema, connectionPageSchema, type ConnectionList, type ConnectionState, type ConnectionPage, type ConnectionCommand } from '../../../../packages/contracts/aws/connections';
+import { checkedDeviceLink, connectionListSchema, connectionObservationsSchema, connectionViewSchema, connectionStateSchema, type ConnectionList, type ConnectionState, type ConnectionPage, type ConnectionCommand } from '../../../../packages/contracts/aws/connections';
 import { inventoryResponseSchema, syncSummarySchema, type InventoryUnit, type SyncSummary } from '../../../../packages/contracts/aws/inventory';
-import { alertStatusSchema, type AlertStatus } from '../../../../packages/contracts/aws/alerts';
 import { reportResponseSchema, type ReportSnapshot } from '../../../../packages/contracts/aws/report';
 import { savedViewListSchema, type SavedView, type SavedViewInput } from '../../../../packages/contracts/aws/saved-views';
 
-export type ConnectionClientState = {
-  identity: WebIdentity | null; list: ConnectionList; selectedId?: string; status?: ConnectionState; inspection?: ConnectionPage; directory?: DirectorySnapshot;
-  /** Latest read result per service for the selected connection (fresh or from the host's local cache). */
-  inventories: Partial<Record<ConnectionPage['operation'], ConnectionPage>>; observedFrom?: 'cache' | 'live'; cachedAt?: string;
+type ConnectionClientState = {
+  identity: WebIdentity | null; list: ConnectionList; selectedId?: string; status?: ConnectionState; directory?: DirectorySnapshot;
   /** Multi-account/region inventory from the host's disk cache, grouped by service, and the last sync summary. */
   units: Partial<Record<ConnectionPage['operation'], InventoryUnit[]>>; sync?: SyncSummary;
   /** Assessments of finished syncs (host disk cache) for the trend report, and this user's saved views (server settings). */
-  report?: ReportSnapshot[]; alerts?: AlertStatus; views: SavedView[];
-  /** Last failed read per area (e.g. read_access_denied) while the session stayed usable; cleared by a successful read. */
-  readErrors: Partial<Record<ConnectionPage['operation'] | 'directory', string>>;
+  report?: ReportSnapshot[]; views: SavedView[];
   /** A finished live sync still has units the host has not cached yet; polling continues while it makes progress. */
   syncDraining: boolean;
   busy: boolean; loading: boolean; error?: string; retryable: boolean;
@@ -31,7 +26,7 @@ const emptyList = (): ConnectionList => ({ items: [], configurations: [] });
 
 /** In-memory, scope-bound client. Neither identity tokens nor account results enter browser storage. */
 export class OrganizationConnectionClient {
-  private value: ConnectionClientState = { identity: null, list: emptyList(), inventories: {}, readErrors: {}, units: {}, views: [], syncDraining: false, loading: false, busy: false, retryable: false };
+  private value: ConnectionClientState = { identity: null, list: emptyList(), units: {}, views: [], syncDraining: false, loading: false, busy: false, retryable: false };
   private readonly listeners = new Set<() => void>();
   private readonly inflight = new Set<AbortController>();
   private readonly identityClient: WebIdentityClient;
@@ -59,7 +54,7 @@ export class OrganizationConnectionClient {
   private set(value: Partial<ConnectionClientState>) { if (this.closed) return; this.value = { ...this.value, ...value }; this.listeners.forEach(listener => listener()); }
   private clear(identity: WebIdentity | null) {
     this.epoch++; this.statusSequence++; this.listSequence++; this.inflight.forEach(controller => controller.abort()); this.inflight.clear(); this.pending = undefined;
-    this.value = { identity, list: emptyList(), inventories: {}, readErrors: {}, units: {}, views: [], syncDraining: false, busy: false, loading: false, retryable: false }; this.listeners.forEach(listener => listener());
+    this.value = { identity, list: emptyList(), units: {}, views: [], syncDraining: false, busy: false, loading: false, retryable: false }; this.listeners.forEach(listener => listener());
   }
   private current(epoch: number) { if (this.closed || epoch !== this.epoch) throw new RequestError('obsolete_response'); }
   private async request(path: string, epoch: number, pending?: Pick<Pending, 'body' | 'key'>, limit = 1_000_000): Promise<unknown> {
@@ -90,7 +85,7 @@ export class OrganizationConnectionClient {
     // Authentication/ownership failures wipe observations; other failures keep the last read results visible.
     const wipe = !(error instanceof RequestError) || [401, 403, 404].includes(error.status);
     this.set({ error: error instanceof RequestError ? error.code : 'request_unknown', busy: false, loading: false, status: undefined, retryable,
-      ...(wipe ? { inspection: undefined, directory: undefined, inventories: {}, readErrors: {}, units: {}, sync: undefined, report: undefined, alerts: undefined, views: [], syncDraining: false, observedFrom: undefined, cachedAt: undefined } : {}) });
+      ...(wipe ? { directory: undefined, units: {}, sync: undefined, report: undefined, views: [], syncDraining: false, } : {}) });
   }
   async signIn() {
     this.acceptingIdentity = true;
@@ -110,14 +105,14 @@ export class OrganizationConnectionClient {
       if (sequence !== this.listSequence) return;
       const selected = list.items.find(item => item.id === this.value.selectedId);
       const changed = selected && JSON.stringify(selected) !== JSON.stringify(this.value.list.items.find(item => item.id === this.value.selectedId));
-      if (changed) this.set({ status: undefined, inspection: undefined, directory: undefined, inventories: {}, readErrors: {}, units: {}, sync: undefined, report: undefined, alerts: undefined, views: [], syncDraining: false, observedFrom: undefined, cachedAt: undefined });
-      this.set({ list, loading: false, ...(!selected ? { selectedId: undefined, status: undefined, inspection: undefined, directory: undefined, inventories: {}, readErrors: {}, units: {}, sync: undefined, report: undefined, alerts: undefined, views: [], syncDraining: false, observedFrom: undefined, cachedAt: undefined } : {}) });
+      if (changed) this.set({ status: undefined, directory: undefined, units: {}, sync: undefined, report: undefined, views: [], syncDraining: false, });
+      this.set({ list, loading: false, ...(!selected ? { selectedId: undefined, status: undefined, directory: undefined, units: {}, sync: undefined, report: undefined, views: [], syncDraining: false, } : {}) });
     } catch (error) { if (sequence === this.listSequence) this.fail(error, epoch); }
   }
   async select(id: string) {
     if (this.value.busy || !this.value.list.items.some(item => item.id === id)) return;
     this.pending = undefined;
-    this.set({ selectedId: id, status: undefined, inspection: undefined, directory: undefined, inventories: {}, readErrors: {}, units: {}, sync: undefined, report: undefined, alerts: undefined, views: [], syncDraining: false, observedFrom: undefined, cachedAt: undefined, error: undefined, retryable: false });
+    this.set({ selectedId: id, status: undefined, directory: undefined, units: {}, sync: undefined, report: undefined, views: [], syncDraining: false, error: undefined, retryable: false });
     // Cached results first: a connected status starts the automatic refresh, which would otherwise block the cache load until it finishes.
     await this.loadObservations(); await this.refreshStatus();
   }
@@ -154,7 +149,7 @@ export class OrganizationConnectionClient {
     if (this.value.busy || !this.value.list.configurations.some(item => item.id === configurationId)) return;
     await this.dispatch({ path: '', body: { configurationId }, key: crypto.randomUUID(), operation: 'create' });
   }
-  /** Last cached read results from the host (owned connection only). Fresh results already shown are never replaced. */
+  /** Last cached Root/OU page and sync summary from the host (owned connection only). A directory page already shown is never replaced. */
   async loadObservations() {
     const selected = this.value.list.items.find(item => item.id === this.value.selectedId);
     if (!selected || this.value.busy) return;
@@ -162,14 +157,10 @@ export class OrganizationConnectionClient {
     try {
       const cached = connectionObservationsSchema.parse(await this.request(`/${selected.id}/observations`, epoch)); this.current(epoch);
       if (selected.id !== this.value.selectedId) return;
-      const pages = Object.values(cached.inventories).filter((page): page is ConnectionPage => Boolean(page));
-      pages.forEach(page => this.match(page)); if (cached.directory) this.match(cached.directory);
-      const inventories = { ...Object.fromEntries(pages.map(page => [page.operation, page])), ...this.value.inventories };
+      if (cached.directory) this.match(cached.directory);
       const sync = cached.sync ? syncSummarySchema.safeParse(cached.sync) : undefined;
-      this.set({ inventories, ...(!this.value.directory && cached.directory ? { directory: cached.directory } : {}),
-        ...(pages.length || cached.directory ? { cachedAt: cached.savedAt, observedFrom: this.value.observedFrom ?? 'cache' } : {}),
-        ...(sync?.success && sync.data.connectionId === selected.id ? { sync: sync.data } : {}) });
-      await this.loadInventory(); await this.loadReport(); await this.loadViews(); await this.loadAlerts();
+      this.set({ ...(!this.value.directory && cached.directory ? { directory: cached.directory } : {}), ...(sync?.success && sync.data.connectionId === selected.id ? { sync: sync.data } : {}) });
+      await this.loadInventory(); await this.loadReport(); await this.loadViews();
     } catch (error) { if (epoch === this.epoch && error instanceof RequestError && [401, 403, 404].includes(error.status)) this.fail(error, epoch); }
   }
   /** Trend snapshots recorded by the host after each finished sync (never calls a worker). */
@@ -181,31 +172,6 @@ export class OrganizationConnectionClient {
       const response = reportResponseSchema.parse(await this.request(`/${selected.id}/report`, epoch, undefined, 16_000_000)); this.current(epoch);
       if (selected.id === this.value.selectedId) this.set({ report: response.snapshots });
     } catch (error) { if (epoch === this.epoch && error instanceof RequestError && [401, 403].includes(error.status)) this.fail(error, epoch); }
-  }
-  /** E-mail alert status (masked recipients, recent outcomes) from the host; never calls a worker. */
-  async loadAlerts() {
-    const selected = this.value.list.items.find(item => item.id === this.value.selectedId);
-    if (!selected) return;
-    const epoch = this.epoch;
-    try {
-      const response = alertStatusSchema.parse(await this.request(`/${selected.id}/alerts`, epoch)); this.current(epoch);
-      if (selected.id === this.value.selectedId) this.set({ alerts: response });
-    } catch (error) { if (epoch === this.epoch && error instanceof RequestError && [401, 403].includes(error.status)) this.fail(error, epoch); }
-  }
-  /** Sends the server's fixed test message to the configured recipients. One click, one request; never retried automatically. */
-  async testAlert(): Promise<string | undefined> {
-    const selected = this.value.list.items.find(item => item.id === this.value.selectedId);
-    if (!selected) return 'connection_unavailable';
-    const epoch = this.epoch;
-    try {
-      const response = alertStatusSchema.parse(await this.request(`/${selected.id}/alerts`, epoch, { body: { operation: 'test' }, key: crypto.randomUUID() })); this.current(epoch);
-      if (selected.id === this.value.selectedId) this.set({ alerts: response });
-      return undefined;
-    } catch (error) {
-      if (epoch === this.epoch && error instanceof RequestError && [401, 403].includes(error.status)) this.fail(error, epoch);
-      if (epoch === this.epoch) await this.loadAlerts();
-      return error instanceof RequestError ? error.code : 'request_unknown';
-    }
   }
   async loadViews() {
     const selected = this.value.list.items.find(item => item.id === this.value.selectedId);
@@ -259,7 +225,7 @@ export class OrganizationConnectionClient {
       this.set({ sync, syncDraining: sync.live && sync.state !== 'running' && (sync.remaining ?? 0) > 0 && this.stalledPolls < 10 });
       if (sync.cachedUnits !== previous?.cachedUnits || sync.state !== previous?.state || sync.jobId !== previous?.jobId) await this.loadInventory();
       if (sync.state !== 'running' && previous?.state === 'running') await this.refreshStatus();
-      if (sync.state !== 'running' && !sync.remaining && (previous?.state === 'running' || previous?.remaining)) { await this.loadReport(); await this.loadAlerts(); }
+      if (sync.state !== 'running' && !sync.remaining && (previous?.state === 'running' || previous?.remaining)) await this.loadReport();
     } catch (error) {
       if (epoch !== this.epoch || error instanceof RequestError && error.code === 'sync_not_found') return;
       if (error instanceof RequestError && [401, 403].includes(error.status)) this.fail(error, epoch);
@@ -301,12 +267,7 @@ export class OrganizationConnectionClient {
         if (!configuration || item.configurationId !== configuration.id || item.accountId !== configuration.accountId || item.roleName !== configuration.roleName || item.region !== configuration.region || JSON.stringify(item.directory) !== JSON.stringify(configuration.directory)) throw new RequestError('invalid_response');
         this.set({ list: { ...this.value.list, items: [...this.value.list.items.filter(row => row.id !== item.id), item] }, selectedId: item.id });
       } else if (pending.operation === 'directory') {
-        const directory = directorySnapshotSchema.parse(result); this.match(directory); const { directory: _, ...readErrors } = this.value.readErrors; this.set({ directory, readErrors, observedFrom: 'live' });
-      } else if (pending.operation === 'inspect') {
-        const inspection = connectionPageSchema.parse(result); this.match(inspection);
-        if (inspection.operation !== (pending.body as ConnectionCommand).service) throw new RequestError('invalid_response');
-        const { [inspection.operation]: _, ...readErrors } = this.value.readErrors;
-        this.set({ inspection, inventories: { ...this.value.inventories, [inspection.operation]: inspection }, readErrors, observedFrom: 'live' });
+        const directory = directorySnapshotSchema.parse(result); this.match(directory); this.set({ directory });
       } else if (pending.operation === 'sync') {
         const sync = syncSummarySchema.parse(result);
         if (sync.connectionId !== pending.connectionId) throw new RequestError('invalid_response');
@@ -322,10 +283,9 @@ export class OrganizationConnectionClient {
       // Saved views belong to the configuration, so a newly registered connection may already have some.
       if (pending.operation === 'create') await this.loadViews();
     } catch (error) {
-      // A read that failed for one area (missing permission, throttling) keeps the session; record it and recheck the status.
-      const area = pending.operation === 'inspect' ? (pending.body as ConnectionCommand).service : pending.operation === 'directory' ? 'directory' as const : undefined;
-      if (area && epoch === this.epoch && error instanceof RequestError && error.code.startsWith('read_')) {
-        this.pending = undefined; this.set({ busy: false, error: error.code, readErrors: { ...this.value.readErrors, [area]: error.code } }); await this.refreshStatus(); return;
+      // A directory read that failed (missing permission, throttling) keeps the session; show it and recheck the status.
+      if (pending.operation === 'directory' && epoch === this.epoch && error instanceof RequestError && error.code.startsWith('read_')) {
+        this.pending = undefined; this.set({ busy: false, error: error.code }); await this.refreshStatus(); return;
       }
       // No running worker (e.g. the host restarted): the AWS session has ended. The host already recorded the request as unknown,
       // so replaying the same key cannot help; ask for a new AWS sign-in and keep the cached results.

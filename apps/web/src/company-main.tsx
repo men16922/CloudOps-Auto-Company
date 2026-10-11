@@ -9,5 +9,5 @@ import { OidcWebIdentityClient, browserOidcDependencies } from './identity/oidc-
 
 // Independent company candidate. No multi-cloud registry, personal startup or demo application.
 // Only the company method with server-provided OIDC settings gets a client; anything else stays unconfigured.
-const identityFactory: WebIdentityFactory = async identity => identity.method === 'company' && identity.oidc ? new OidcWebIdentityClient(identity.oidc, browserOidcDependencies()) : null;
-ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><LanguageProvider><WebIdentityFactoryProvider factory={identityFactory}><OrganizationAccess><AccountDashboard company /></OrganizationAccess></WebIdentityFactoryProvider></LanguageProvider></React.StrictMode>);
+const identityFactory: WebIdentityFactory = async identity => identity.oidc ? new OidcWebIdentityClient(identity.oidc, browserOidcDependencies()) : null;
+ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><LanguageProvider><WebIdentityFactoryProvider factory={identityFactory}><OrganizationAccess><AccountDashboard /></OrganizationAccess></WebIdentityFactoryProvider></LanguageProvider></React.StrictMode>);

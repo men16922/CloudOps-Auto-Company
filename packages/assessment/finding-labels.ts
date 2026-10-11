@@ -1,10 +1,10 @@
 import type { Finding, MetricId } from './operations-assessment';
 
 /** `t(korean, english)` of the viewer (dashboard) or of the configured recipient language (host e-mail). */
-export type Translate = (ko: string, en: string) => string;
+type Translate = (ko: string, en: string) => string;
 type Labelled = Pick<Finding, 'kind'> & Partial<Pick<Finding, 'metric' | 'eos'>>;
 
-/** Display names shared by the dashboard, the report exports and e-mail alerts. */
+/** Display names shared by the dashboard and the report exports. */
 export const metricLabel = (id: MetricId, t: Translate) => ({ ec2_cpu: t('EC2 CPU 사용률', 'EC2 CPU utilization'), ec2_status: t('EC2 상태 검사 실패', 'EC2 status check failed'), rds_cpu: t('RDS CPU 사용률', 'RDS CPU utilization'),
     rds_storage: t('RDS 여유 저장공간', 'RDS free storage'), cache_cpu: t('ElastiCache CPU 사용률', 'ElastiCache CPU utilization'), cache_memory: t('ElastiCache 메모리 사용률', 'ElastiCache memory usage'),
     msk_cpu: t('MSK 브로커 CPU(User)', 'MSK broker CPU (user)'), msk_disk: t('MSK 데이터 디스크 사용률', 'MSK data disk usage'), lambda_errors: t('Lambda 오류 수', 'Lambda errors') })[id];

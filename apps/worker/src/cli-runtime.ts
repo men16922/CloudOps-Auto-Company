@@ -5,7 +5,7 @@ import { isAbsolute, join } from 'node:path';
 import { bindingDigest, cliArguments, cliBindingSchema, cliConfig, cliFailure, cliTargetSchema, type CliBinding, type CliRuntime } from '../../../packages/worker-protocol/cli-contract';
 import { boundedCliProcess } from '../../../packages/worker-protocol/bounded-process';
 
-export const workerHome = '/home/cloudops-worker';
+const workerHome = '/home/cloudops-worker';
 const awsDirectory = `${workerHome}/.aws`;
 
 async function privatePath(path: string, directory: boolean) {
@@ -26,7 +26,7 @@ async function fixedFile(path: string, content: string) {
   if (await readFile(path, 'utf8') !== content) throw cliFailure('worker_binding_changed', 503);
 }
 /** Provision only a new dedicated directory; never imports host CLI files or copies tokens. */
-export const accountConfigPath = (directory: string, accountId: string) => join(directory, `config-a${cliTargetSchema.shape.accountId.parse(accountId)}`);
+const accountConfigPath = (directory: string, accountId: string) => join(directory, `config-a${cliTargetSchema.shape.accountId.parse(accountId)}`);
 export async function prepareCliDirectory(directory: string, input: unknown, accountId?: string) {
   const binding = cliBindingSchema.parse(input);
   if (!isAbsolute(directory)) throw cliFailure('worker_storage_invalid', 503);

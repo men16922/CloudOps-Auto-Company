@@ -50,7 +50,7 @@ export const metricQueries: ReadonlyArray<{ id: typeof connectionMetricIds[numbe
 export const configResourceTypes = ['AWS::EC2::VPC', 'AWS::EC2::Instance', 'AWS::EKS::Cluster', 'AWS::RDS::DBInstance', 'AWS::MSK::Cluster',
   'AWS::Lambda::Function', 'AWS::DynamoDB::Table', 'AWS::ApiGateway::RestApi', 'AWS::ApiGatewayV2::Api'] as const;
 /** Fixed advanced-query SELECT per resource type. Property names follow the AWS Config resource schema for each type. */
-export const configSelect: Record<typeof configResourceTypes[number], string> = {
+const configSelect: Record<typeof configResourceTypes[number], string> = {
   'AWS::EC2::VPC': 'configuration.isDefault, tags',
   'AWS::EC2::Instance': 'configuration.instanceType, configuration.state.name, configuration.launchTime, tags',
   'AWS::EKS::Cluster': 'configuration.Version, configuration.ClusterStatus, tags',
@@ -78,7 +78,7 @@ export const readQuerySchema = z.discriminatedUnion('kind', [
 ]);
 export type ReadQuery = z.infer<typeof readQuerySchema>;
 /** Internal only: values come from this worker's expiring directory grants. */
-export const directoryQuerySchema = z.object({ parentId: directoryParentId, nextToken: z.string().min(1).max(100000).optional() }).strict();
+const directoryQuerySchema = z.object({ parentId: directoryParentId, nextToken: z.string().min(1).max(100000).optional() }).strict();
 export type DirectoryQuery = z.infer<typeof directoryQuerySchema>;
 export type CliIdentity = { accountId: string; arn: string; userId: string };
 export type CliLoginState = {
@@ -89,7 +89,7 @@ export type CliLoginState = {
   accountId: string; roleName: string; region: string;
   code?: string;
 };
-export type CliResult = { stdout: string };
+type CliResult = { stdout: string };
 export interface CliRuntime {
   run(operation: CliOperation, signal: AbortSignal, output?: (chunk: string) => void, input?: DirectoryQuery | ReadQuery, target?: CliTarget): Promise<CliResult>;
 }

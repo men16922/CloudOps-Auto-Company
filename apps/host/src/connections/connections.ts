@@ -11,12 +11,11 @@ import { reportSnapshotSchema, type ReportSnapshot } from '../../../../packages/
 import { savedViewCommandSchema, savedViewSchema, type SavedView } from '../../../../packages/contracts/aws/saved-views';
 import { bindingDigest, cliBindingSchema, cliReadSchema, type CliBinding } from '../../../../packages/worker-protocol/cli-contract';
 import { reportSnapshot, retainSnapshots } from './report-snapshots';
-import type { EmailAlerts } from '../notifications/email-alerts';
 
 export const connectionConfigurationSchema = cliBindingSchema.omit({ actorId: true, connectionId: true }).extend({ configurationId: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/), label: z.string().min(1).max(128) }).strict();
 type Configuration = z.infer<typeof connectionConfigurationSchema>;
-export const connectionActionSchema = z.object({ requestKey: z.uuid(), operation: z.enum(['login', 'verify', 'inspect', 'directory', 'disconnect', 'logout', 'sync']), service: cliReadSchema.optional(), cursor: z.uuid().optional() }).strict().refine(value => (value.operation === 'inspect' ? Boolean(value.service) : value.service === undefined) && (value.operation === 'directory' || value.cursor === undefined));
-export type ConnectionAction = z.infer<typeof connectionActionSchema>;
+const connectionActionSchema = z.object({ requestKey: z.uuid(), operation: z.enum(['login', 'verify', 'inspect', 'directory', 'disconnect', 'logout', 'sync']), service: cliReadSchema.optional(), cursor: z.uuid().optional() }).strict().refine(value => (value.operation === 'inspect' ? Boolean(value.service) : value.service === undefined) && (value.operation === 'directory' || value.cursor === undefined));
+type ConnectionAction = z.infer<typeof connectionActionSchema>;
 type RecordValue = { binding: CliBinding; configurationId: string; digest: string; createdAt: string; enabled: boolean; activeRequest?: { key: string; deadline: number } };
 type RequestValue = { fingerprint: string; state: 'pending' | 'completed' | 'failed' | 'unknown'; result?: unknown; code?: string };
 /** Authenticated private transport must bind a worker/lease to this exact immutable binding. */
@@ -67,14 +66,12 @@ export class OrganizationConnections {
   private readonly configs: Configuration[];
   private readonly now: () => number;
   private readonly cache?: ObservationCache;
-  private readonly alerting?: EmailAlerts;
-  private readonly sending = new Set<Promise<void>>();
   /** Gap between host-side fetch steps of a running sync (tests shorten it). */
   followIntervalMs = 3_000;
   private readonly followers = new Map<string, ReturnType<typeof setTimeout>>();
   private closed = false;
-  constructor(store: CloudStore, access: OrganizationWebAccess, transport: OrganizationWorkerTransport, configurations: unknown, now = Date.now, observations?: ObservationCache, alerts?: EmailAlerts) {
-    this.store = store; this.access = access; this.transport = transport; this.now = now; this.cache = observations; this.alerting = observations ? alerts : undefined;
+  constructor(store: CloudStore, access: OrganizationWebAccess, transport: OrganizationWorkerTransport, configurations: unknown, now = Date.now, observations?: ObservationCache) {
+    this.store = store; this.access = access; this.transport = transport; this.now = now; this.cache = observations;
     this.configs = z.array(connectionConfigurationSchema).max(1000).parse(configurations);
     if (new Set(this.configs.map(value => JSON.stringify([value.organizationId, value.workspaceId, value.configurationId]))).size !== this.configs.length) throw new Error('Duplicate organization connection configuration');
   }
@@ -228,8 +225,8 @@ export class OrganizationConnections {
     };
     schedule();
   }
-  /** Host shutdown: stop following syncs and wait for alert mail already being sent. */
-  async close() { this.closed = true; this.followers.forEach(timer => clearTimeout(timer)); this.followers.clear(); await this.idle(); }
+  /** Host shutdown: stop following syncs. */
+  async close() { this.closed = true; this.followers.forEach(timer => clearTimeout(timer)); this.followers.clear(); }
   /** Cached units of one service (or `all`) across accounts/regions (owned connection only; never calls a worker). */
   async inventory(session: OrganizationWebSession, id: string, service: unknown) {
     const checkedService = service === 'all' ? 'all' as const : cliReadSchema.parse(service), value = await this.store.transact(tx => this.owned(tx, session, id));
@@ -251,24 +248,7 @@ export class OrganizationConnections {
       const unit = inventoryUnitSchema.safeParse(entry.unit);
       if (entry.jobId === job.jobId && unit.success && entry.key === unitKey(unit.data)) units.push(unit.data);
     }
-    const snapshot = reportSnapshot(job, units, value.binding.inventory?.requiredTags);
-    await this.cache.saveReport(scope, retainSnapshots([...history, snapshot], this.now()));
-    // Alert mail is sent after the snapshot is stored and never delays the sync poll that finished the job.
-    if (this.alerting) { const sending = this.alerting.afterSnapshot(scope, value.configurationId, snapshot).catch(() => undefined); this.sending.add(sending); void sending.finally(() => this.sending.delete(sending)); }
-  }
-  /** Waits for alert deliveries started by finished syncs (host shutdown and tests). */
-  async idle() { await Promise.allSettled([...this.sending]); }
-  /** E-mail alert status of an owned connection: masked recipients and recent outcomes. Never calls a worker. */
-  async alerts(session: OrganizationWebSession, id: string) {
-    const value = await this.store.transact(tx => this.owned(tx, session, id));
-    return this.alerting ? this.alerting.status(this.cacheScope(value), value.configurationId) : { configured: false, recipients: [], history: [] };
-  }
-  /** Sends the fixed test message to the configured recipients. The browser chooses neither recipients nor content. */
-  async updateAlerts(session: OrganizationWebSession, id: string, input: unknown) {
-    z.object({ requestKey: z.uuid(), operation: z.literal('test') }).strict().parse(input);
-    const value = await this.store.transact(tx => this.owned(tx, session, id));
-    if (!this.alerting) throw new CloudOperationError(409, 'alerts_not_configured', 'E-mail alerts are not configured for this payer.');
-    return this.alerting.test(this.cacheScope(value), value.configurationId);
+    await this.cache.saveReport(scope, retainSnapshots([...history, reportSnapshot(job, units, value.binding.inventory?.requiredTags)], this.now()));
   }
   /** Trend snapshots of finished syncs (owned connection only; disk cache; never calls a worker). */
   async report(session: OrganizationWebSession, id: string) {

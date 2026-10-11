@@ -18,7 +18,6 @@ import Tabs from '@cloudscape-design/components/tabs';
 import { useLanguage } from '../i18n';
 import type { DirectorySnapshot } from '../../../../packages/contracts/aws/directory';
 import type { InventoryUnit, SyncSummary } from '../../../../packages/contracts/aws/inventory';
-import type { AlertStatus } from '../../../../packages/contracts/aws/alerts';
 import type { ReportSnapshot, SnapshotFinding } from '../../../../packages/contracts/aws/report';
 import type { SavedQuery, SavedView, SavedViewInput } from '../../../../packages/contracts/aws/saved-views';
 import type { DashboardView } from './AccountDashboard';
@@ -32,7 +31,7 @@ import { lambdaRuntimeStatus, lifecycleCapturedAt, lifecycleRows, upcomingWindow
 import { guardDutyLevel, securityCoverage, tagRows, type CoverageRow, type CoverageState, type TagRow, type TagStatus } from '../../../../packages/assessment/governance';
 
 type Props = { view: DashboardView; viewHref: (view: DashboardView) => string; pageTitle: (view: DashboardView) => string; connected: boolean;
-  report?: ReportSnapshot[]; views: SavedView[]; onSaveView: (view: SavedViewInput) => Promise<boolean>; onDeleteView: (id: string) => Promise<boolean>; alerts?: AlertStatus; onTestAlert: () => Promise<string | undefined>; onRefreshAlerts: () => void; busy: boolean; portal?: { startUrl: string; roleName: string }; requiredTags?: readonly string[];
+  report?: ReportSnapshot[]; views: SavedView[]; onSaveView: (view: SavedViewInput) => Promise<boolean>; onDeleteView: (id: string) => Promise<boolean>; busy: boolean; portal?: { startUrl: string; roleName: string }; requiredTags?: readonly string[];
   sync?: SyncSummary; units: Partial<Record<Service, InventoryUnit[]>>; directory?: DirectorySnapshot; hasDirectoryScope: boolean;
   onSync: () => void; onReadDirectory: () => void; onNavigate: (cursor: string) => void };
 const tone: Record<Finding['severity'], StatusIndicatorProps.Type> = { critical: 'error', warning: 'warning', info: 'info' };
@@ -46,7 +45,7 @@ const shortcut = (startUrl: string, accountId: string, roleName: string, url: st
 
 /** Read-only operations views over the cached multi-account inventory. Status is derived only from collected evidence. */
 export default function OperationsDashboard(props: Props) {
-  const { view, viewHref, pageTitle, connected, busy, portal, requiredTags = [], sync, units, directory, hasDirectoryScope, onSync, onReadDirectory, onNavigate, report, views, onSaveView, onDeleteView, alerts, onTestAlert, onRefreshAlerts } = props;
+  const { view, viewHref, pageTitle, connected, busy, portal, requiredTags = [], sync, units, directory, hasDirectoryScope, onSync, onReadDirectory, onNavigate, report, views, onSaveView, onDeleteView } = props;
   const { t, locale } = useLanguage();
   const [accountScope, setAccountScope] = useState<string[]>([]), [regionScope, setRegionScope] = useState<string[]>([]);
   const [serverlessTab, setServerlessTab] = useState('lambda'), [ssmTab, setSsmTab] = useState('nodes'), [securityTab, setSecurityTab] = useState('securityhub'), [allFindings, setAllFindings] = useState(false);
@@ -209,7 +208,7 @@ export default function OperationsDashboard(props: Props) {
     const describe = (item: SnapshotFinding) => { const finding = item as unknown as Finding;
       return { subject: item.kind === 'tags' || item.kind === 'read-failed' ? serviceLabel[item.subject as Service] ?? item.subject : item.subject, detail: `${kindLabel(finding) ?? item.kind} · ${findingDetail(finding)}` }; };
     const scopeText = accountScope.length || regionScope.length ? t(`계정 ${accountScope.length || '전체'} · 리전 ${regionScope.length || '전체'}`, `${accountScope.length || 'all'} accounts · ${regionScope.length || 'all'} regions`) : t('전체 동기화 범위', 'Entire sync scope');
-    return page(<ReportView snapshots={report} scope={reportScope} scopeText={scopeText} eos={lifecycleRows(data)} eosLabel={eosLabel} accountLabel={accountLabel} accountName={id => accountNames.get(id)} describe={describe} table={table} alerts={alerts} onTestAlert={onTestAlert} onRefreshAlerts={onRefreshAlerts} />);
+    return page(<ReportView snapshots={report} scope={reportScope} scopeText={scopeText} eos={lifecycleRows(data)} eosLabel={eosLabel} accountLabel={accountLabel} accountName={id => accountNames.get(id)} describe={describe} table={table} />);
   }
   if (view === 'ec2') return page(resourceTable('ec2', t('EC2 인스턴스', 'EC2 instances'), [
     { id: 'name', header: t('인스턴스', 'Instance'), cell: item => item.id ? <Link external href={open(item.accountId, consoleLink.ec2(item.region, item.id))}>{item.name}</Link> : item.name },

@@ -4,7 +4,7 @@ import { directoryScopeSchema, directorySnapshotSchema } from './directory';
 const syncSummaryShape = z.object({ jobId: z.uuid() }).passthrough();
 const account = z.string().regex(/^\d{12}$/), role = z.string().min(1).max(128), region = z.string().regex(/^[a-z]{2}(?:-[a-z]+)+-\d$/);
 /** AWS tag key (case-sensitive). Required keys are server-configured and never use the reserved `aws:` prefix. */
-export const tagKeySchema = z.string().regex(/^[\p{L}\p{Z}\p{N}_.:/=+\-@]{1,128}$/u);
+const tagKeySchema = z.string().regex(/^[\p{L}\p{Z}\p{N}_.:/=+\-@]{1,128}$/u);
 export const requiredTagsSchema = z.array(tagKeySchema.refine(value => !value.toLowerCase().startsWith('aws:'))).min(1).max(10);
 export const connectionViewSchema = z.object({ id: z.uuid(), configurationId: z.string().min(1).max(64), accountId: account, roleName: role, region, createdAt: z.iso.datetime(), directory: directoryScopeSchema.optional(), startUrl: z.url().optional(),
   requiredTags: requiredTagsSchema.optional() }).strict();
@@ -25,12 +25,12 @@ export const connectionPageSchema = z.object({ connectionId: z.uuid(), accountId
 /** Last cached read results for one owned connection (served by the host from its local cache). */
 export const connectionObservationsSchema = z.object({ savedAt: z.iso.datetime().optional(), directory: directorySnapshotSchema.optional(), sync: syncSummaryShape.optional(),
   inventories: z.object(Object.fromEntries(connectionServices.map(service => [service, connectionPageSchema.optional()])) as Record<typeof connectionServices[number], z.ZodOptional<typeof connectionPageSchema>>).strict() }).strict();
-export type ConnectionObservations = z.infer<typeof connectionObservationsSchema>;
 export type ConnectionView = z.infer<typeof connectionViewSchema>;
 export type ConnectionList = z.infer<typeof connectionListSchema>;
 export type ConnectionState = z.infer<typeof connectionStateSchema>;
 export type ConnectionPage = z.infer<typeof connectionPageSchema>;
-export type ConnectionCommand = { operation: 'login' | 'verify' | 'inspect' | 'directory' | 'disconnect' | 'logout' | 'sync'; service?: ConnectionPage['operation']; cursor?: string };
+/** What the browser can ask of a connection. Single-service reads (`inspect`) stay a host/worker API for verification tools. */
+export type ConnectionCommand = { operation: 'login' | 'verify' | 'directory' | 'disconnect' | 'logout' | 'sync'; cursor?: string };
 
 /** A device link is either the code-free page or the same page carrying exactly this user code. */
 export function checkedDeviceLink(value: string, userCode: string | undefined, portalHost: (host: string) => boolean, complete: boolean) {

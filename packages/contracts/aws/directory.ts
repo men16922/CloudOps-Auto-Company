@@ -5,7 +5,7 @@ export const directoryParentId = z.string().regex(/^(?:r-[a-z0-9]{4,32}|ou-[a-z0
 /** Trusted server configuration. A root/OU is a read scope, never an access grant. */
 export const directoryScopeSchema = z.object({ awsOrganizationId, parentId: directoryParentId }).strict();
 export const accountLifecycleSchema = z.enum(['PENDING_ACTIVATION', 'ACTIVE', 'SUSPENDED', 'PENDING_CLOSURE', 'CLOSED', 'UNKNOWN']);
-export const directoryAccountSchema = z.object({ id: z.string().regex(/^\d{12}$/), name: z.string().min(1).max(128), lifecycle: accountLifecycleSchema,
+const directoryAccountSchema = z.object({ id: z.string().regex(/^\d{12}$/), name: z.string().min(1).max(128), lifecycle: accountLifecycleSchema,
   access: z.literal('not-checked'), inspection: z.literal('not-collected') }).strict();
 const ouSchema = z.object({ id: z.string().regex(/^ou-[a-z0-9]{4,32}-[a-z0-9]{8,32}$/), name: z.string().min(1).max(128), browseCursor: z.uuid().optional() }).strict();
 const issue = z.enum(['access_denied', 'not_in_organization', 'throttled', 'unavailable', 'invalid_response']);
@@ -21,5 +21,4 @@ export const directorySnapshotSchema = z.object({
   accounts: page(directoryAccountSchema, 'organizations:ListAccountsForParent'),
   organizationalUnits: page(ouSchema, 'organizations:ListOrganizationalUnitsForParent'),
 }).strict().refine(value => value.navigation.path[0].id === value.scope.parentId && value.navigation.path.at(-1)!.id === value.parentId && new Set(value.navigation.path.map(item => item.id)).size === value.navigation.path.length, 'Directory path must remain rooted in its configured scope.');
-export type DirectoryScope = z.infer<typeof directoryScopeSchema>;
 export type DirectorySnapshot = z.infer<typeof directorySnapshotSchema>;

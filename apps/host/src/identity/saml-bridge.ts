@@ -20,7 +20,6 @@ export const samlBridgeConfigSchema = z.object({
   sp: z.object({ entityId: z.string().min(1).max(1024) }).strict(),
   sessionSeconds: z.number().int().min(300).max(3600).default(3600),
 }).strict();
-export type SamlBridgeConfig = z.input<typeof samlBridgeConfigSchema>;
 
 const b64url = /^[A-Za-z0-9_-]{43,128}$/;
 const random = () => randomBytes(32).toString('base64url');

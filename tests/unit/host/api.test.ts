@@ -167,11 +167,6 @@ test('organization HTTP enforces Bearer membership and strict requests through t
   assert.deepEqual((await (await request(`/${connection.id}/views`)).json()).items.map((item: { view: { name: string } }) => item.view.name), ['Synthetic']);
   assert.equal((await request(`/${connection.id}/views`, { operation: 'save', view: { name: 'x', page: 'shell', accounts: [], regions: [], queries: {} } })).status, 400);
   assert.equal((await request(`/${connection.id}/views`, undefined, 'valid-b')).status, 404);
-  // Alert status is owner-only; without a notifications config the test message is refused and nothing is sent.
-  assert.deepEqual(await (await request(`/${connection.id}/alerts`)).json(), { configured: false, recipients: [], history: [] });
-  const notConfigured = await request(`/${connection.id}/alerts`, { operation: 'test' }); assert.equal(notConfigured.status, 409); assert.equal((await notConfigured.json()).code, 'alerts_not_configured');
-  assert.equal((await request(`/${connection.id}/alerts`, { operation: 'send', to: 'x@example.invalid' })).status, 400, 'the browser cannot choose recipients or content');
-  assert.equal((await request(`/${connection.id}/alerts`, undefined, 'valid-b')).status, 404);
   const logout = await request(`/${connection.id}/actions`, { operation: 'logout' }); assert.equal(logout.status, 200);
   assert.equal((await (await request(`/${connection.id}/status`)).json()).status, 'disconnected');
   s.revokeIdentity(); assert.equal((await request(`/${connection.id}/status`)).status, 401);

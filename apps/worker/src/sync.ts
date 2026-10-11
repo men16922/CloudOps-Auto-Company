@@ -9,10 +9,10 @@ import { checkedCliIdentity, cliFailure, configResourceTypes, type CliBinding, t
 
 type Service = typeof connectionServices[number];
 type Item = z.infer<typeof connectionItemSchema>;
-export type SyncRun = (operation: CliOperation, input?: DirectoryQuery | ReadQuery, target?: CliTarget) => Promise<string>;
+type SyncRun = (operation: CliOperation, input?: DirectoryQuery | ReadQuery, target?: CliTarget) => Promise<string>;
 /** Reads one service in one account/region (shared with the single-account inspect path). */
-export type SyncRead = (service: Service, target: CliTarget) => Promise<{ items: Item[]; hasMore: boolean }>;
-export type SyncContext = { binding: Readonly<CliBinding>; pinned: CliIdentity; now: () => number; run: SyncRun; read: SyncRead; readFailure: (code: string) => CloudOperationError };
+type SyncRead = (service: Service, target: CliTarget) => Promise<{ items: Item[]; hasMore: boolean }>;
+type SyncContext = { binding: Readonly<CliBinding>; pinned: CliIdentity; now: () => number; run: SyncRun; read: SyncRead; readFailure: (code: string) => CloudOperationError };
 
 const directoryPage = z.object({ Items: z.array(z.object({ Id: z.string(), Name: z.string().nullable().optional(), Arn: z.string().optional(), State: z.string().nullable().optional() }).passthrough()).max(20),
   NextToken: z.string().min(1).max(100000).nullable().optional(), HasMore: z.boolean() }).strict();

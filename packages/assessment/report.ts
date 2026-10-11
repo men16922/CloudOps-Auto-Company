@@ -4,7 +4,7 @@ type Severity = SnapshotFinding['severity'];
 type Counts = Record<Severity, number>;
 export type ReportScope = { accounts: readonly string[]; regions: readonly string[] };
 export type ResolvedFinding = SnapshotFinding & { verified: boolean };
-export type ReportComparison = {
+type ReportComparison = {
   latest: ReportSnapshot; baseline?: ReportSnapshot;
   /** The history is shorter than the period: the comparison starts at the oldest snapshot instead. */
   baselineShort: boolean; periodDays: number;
@@ -18,7 +18,7 @@ export type ReportComparison = {
 const day = 86_400_000;
 
 /** Same scope rule as the dashboard: AWS Health is account-wide, so it ignores the region scope. Organization-wide items stay in. */
-export function inReportScope(finding: SnapshotFinding, scope: ReportScope) {
+function inReportScope(finding: SnapshotFinding, scope: ReportScope) {
   return (!scope.accounts.length || !finding.accountId || scope.accounts.includes(finding.accountId))
     && (!scope.regions.length || !finding.region || finding.kind === 'health' || scope.regions.includes(finding.region));
 }
@@ -27,8 +27,8 @@ const count = (findings: readonly SnapshotFinding[]): Counts => {
 };
 
 /** A disappeared item counts as resolved only if this sync could still see that place: complete findings, a verified account
- * and no read failure for that service/account/region. Shared by the report and e-mail alerts. */
-export function resolvedVisibility(latest: ReportSnapshot) {
+ * and no read failure for that service/account/region. */
+function resolvedVisibility(latest: ReportSnapshot) {
   const failed = new Set(latest.findings.filter(item => item.kind === 'read-failed').map(item => `${item.subject}|${item.accountId}|${item.region}`));
   return (item: Pick<SnapshotFinding, 'source' | 'accountId' | 'region'>) => !latest.truncated && (!item.accountId || latest.verified.includes(item.accountId)) && !failed.has(`${item.source}|${item.accountId}|${item.region}`);
 }

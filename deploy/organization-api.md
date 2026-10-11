@@ -79,8 +79,6 @@ const store = new DynamoDbCloudStore({ tableName, region }, { credentials: compa
 | GET /:connectionId/report | 동기화별 판정 기록(추이·비교용, 디스크 캐시, worker 호출 없음) |
 | GET /:connectionId/views | 이 사용자의 저장된 보기(서버 저장소, 연결 설정별) |
 | POST /:connectionId/views | `{operation:'save', view}`(같은 이름 덮어쓰기) 또는 `{operation:'delete', id}`. `Idempotency-Key` 필요 |
-| GET /:connectionId/alerts | 이메일 알림 상태: 설정 여부, 가린 수신자, 기준, 최근 발송 결과(worker 호출 없음) |
-| POST /:connectionId/alerts | `{operation:'test'}`만 받는다. 서버 설정의 수신자에게 고정 문구 테스트 메일(연결당 1분에 1회). 수신자·내용은 받지 않는다 |
 | POST /:connectionId/actions | login/verify/inspect/directory/disconnect/logout/sync |
 
 매 요청에 현재 Bearer 신원·membership·소유권을 검사한다. POST는 UUID Idempotency-Key와 strict JSON을 받는다. 웹 Host/Origin을 고정하고 Origin 없는 GET은 same-origin Fetch Metadata를 요구한다. 개인/demo cookie·forwarded-user header·body의 actor/role은 권한이 아니다.
@@ -103,21 +101,3 @@ inspect는 등록된 서비스(`alarms`·`metrics`·`ec2`·`eks`·`rds`·`elasti
 - **실패 범위:** 단위 하나(`read_*`), 계정 하나(`denied`/`failed`), 세션 수준(신원 변경·만료 → 작업과 세션 종료)으로 나뉜다.
 - **캐시:** 호스트는 단위마다 `observations/<scope digest>.units/u-<key digest>.json`(0600, 디렉터리 0700)에 저장한다. 완전한 동기화가 끝나면 더 이상 생성되지 않는 키를 지운다. 끝난 작업(완료·일부 실패)은 그 작업의 단위만으로 판정해 `report.json`에 한 번 기록한다(최근 48시간 전부, 이후 하루 1개·35일). 동기화 요약의 `remaining`은 아직 가져오지 않은 단위 수다. 동기화를 시작하면 호스트가 3초 간격으로 끝난 단위를 직접 가져온다(브라우저가 떠나도 계속). 매 단계 연결·구성원·설정을 다시 확인하고, 작업이 끝나거나 worker가 없거나 권한이 회수되거나 6시간이 지나거나 호스트가 종료되면 멈춘다. worker 생성·로그인·동기화 시작은 하지 않는다. 단위는 호스트가 job의 참조(id·계정·리전·서비스·항목 수)와 범위 계정 목록에 대조한 뒤에만 저장한다.
 - **수명주기 근거:** EKS `describe-cluster-versions --include-all`(종료일 포함), RDS `describe-db-major-engine-versions`, MSK `list-kafka-versions`를 동기화마다 한 번씩(해당 자원이 있을 때만) 읽어 항목에 `support`/`eos`를 붙인다.
-
-## 이메일 알림 (notifications.email)
-
-서버 설정(배포 JSON)에만 둔다. 브라우저에는 가린 수신자와 발송 결과만 보인다. Slack 등 다른 채널은 없다.
-
-```json
-"notifications": { "email": {
-  "from": "alerts@example.invalid",
-  "smtp": { "host": "smtp.example.invalid", "port": 465, "security": "tls", "username": "alerts@example.invalid", "passwordFile": "/absolute/path/smtp-password" },
-  "routes": [{ "configurationId": "aws-read", "to": ["ops@example.invalid"], "minSeverity": "warning", "detail": "full", "language": "ko", "timeZone": "Asia/Seoul" }],
-  "minIntervalMinutes": 0 } }
-```
-
-- **전송:** 호스트의 SMTP 클라이언트가 항상 TLS로 보낸다(`tls`=465 암묵적 TLS, `starttls`=587). 인증서 검증을 끄지 않고 평문 AUTH는 하지 않는다. 비밀번호는 `passwordFile`(호스트 사용자만 읽는 0600 파일)에서 보낼 때 읽는다. Gmail은 2단계 인증 후 만든 앱 비밀번호(공백 없이)를 쓴다. `check-deployment`가 파일 유무·권한만 확인해 보여 준다(내용은 읽지 않음).
-- **보내는 때:** 동기화가 끝나 판정이 기록될 때다. 첫 기록은 '알림 시작' 메일(현재 조치·주의 항목)이고, 이후에는 이전에 알리지 않은 항목만 보낸다. 새 항목이 없으면 보내지 않는다. 조회 실패·수집 범위 제한은 항목으로 알리지 않고 본문에 개수만 적는다.
-- **중복 방지:** 알린 항목 id를 사용자 캐시의 `alerts.json`에 둔다. 사라진 항목은 그 동기화가 그 위치를 볼 수 있었을 때(접근 확인, 조회 실패 없음)만 목록에서 지운다. 실패하거나 `minIntervalMinutes` 때문에 미룬 항목은 다음 동기화에 다시 보낸다.
-- **내용:** `detail: full`은 수준·종류·대상·계정/리전·내용(최대 50행), `summary`는 종류별 개수만 보낸다. 링크는 `publicOrigin`의 운영 리포트다. 값은 HTML 이스케이프하고 주소는 CR/LF·표시 이름이 없는 addr-spec만 받는다.
-

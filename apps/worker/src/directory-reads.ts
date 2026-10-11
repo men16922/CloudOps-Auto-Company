@@ -20,7 +20,7 @@ function issue(error: unknown): { status: 'denied' | 'unavailable'; code: 'acces
   return { status: 'unavailable', code: error.code === 'organization_not_in_use' ? 'not_in_organization' : error.code === 'cli_throttled' ? 'throttled' : error.code === 'directory_invalid_response' ? 'invalid_response' : 'unavailable' };
 }
 type PathNode = { id: string; name: string };
-export type DirectorySelection = { path: PathNode[]; expires: number; accountPage: number; ouPage: number; accountToken?: string; ouToken?: string; accountSeen: string[]; ouSeen: string[] };
+type DirectorySelection = { path: PathNode[]; expires: number; accountPage: number; ouPage: number; accountToken?: string; ouToken?: string; accountSeen: string[]; ouSeen: string[] };
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 
 /** Per-worker capabilities. Raw AWS continuation tokens never leave this instance/runtime. */

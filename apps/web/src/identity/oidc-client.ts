@@ -3,8 +3,8 @@ import { browserOidcSchema, type BrowserOidcConfiguration } from '../../../../pa
 import type { WebIdentity, WebIdentityClient } from './web-identity';
 
 export const oidcCallbackChannel = 'cloudops-oidc';
-export const oidcCallbackPath = '/oidc-callback.html';
-export type OidcPopup = { navigate(url: string): void; close(): void };
+const oidcCallbackPath = '/oidc-callback.html';
+type OidcPopup = { navigate(url: string): void; close(): void };
 export type OidcClientDependencies = {
   origin: string;
   /** Must open synchronously inside the click so the browser keeps the user activation. */

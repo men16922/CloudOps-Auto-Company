@@ -7,7 +7,6 @@ import { workerCommandSchema } from '../../../../packages/worker-protocol/comman
 import { OrganizationConnections, type OrganizationWorkerTransport } from '../connections/connections';
 import type { CloudStore } from '../storage/store';
 import type { ObservationCache } from '../connections/observation-cache';
-import type { EmailAlerts } from '../notifications/email-alerts';
 import type { OrganizationWebAccess } from '../identity/web-access';
 import { OrganizationWorkerRouter } from './router';
 import { OrganizationWorkerLeases, workerLeaseHandle, workerReadyReceiptSchema, type WorkerLeaseReason, type WorkerReadyReceipt, type WorkerRetirementReceipt } from './leases';
@@ -196,11 +195,11 @@ export class OrganizationWorkerSupervisor implements OrganizationWorkerTransport
 
 /** Company composition: identity/store are supplied by the host; no provider SDK or infrastructure default. */
 export function createOrganizationWorkerRuntime(options: { store: CloudStore; access: OrganizationWebAccess; configurations: unknown;
-  provisioner?: OrganizationWorkerProvisioner; now?: () => number; lifetimeMs?: number; operationTimeoutMs?: number; heartbeatIntervalMs?: number; observations?: ObservationCache; alerts?: EmailAlerts }) {
+  provisioner?: OrganizationWorkerProvisioner; now?: () => number; lifetimeMs?: number; operationTimeoutMs?: number; heartbeatIntervalMs?: number; observations?: ObservationCache }) {
   const leases = new OrganizationWorkerLeases(options.store, { now: options.now, lifetimeMs: options.lifetimeMs });
   let supervisor: OrganizationWorkerSupervisor;
   // Validate configurations before creating a lifecycle timer. Calls cannot arrive before this factory returns.
-  const connections = new OrganizationConnections(options.store, options.access, { invoke: (...args) => supervisor.invoke(...args) }, options.configurations, options.now, options.observations, options.alerts);
+  const connections = new OrganizationConnections(options.store, options.access, { invoke: (...args) => supervisor.invoke(...args) }, options.configurations, options.now, options.observations);
   supervisor = new OrganizationWorkerSupervisor({ leases, authorize: binding => connections.workerAuthorization(binding), provisioner: options.provisioner,
     operationTimeoutMs: options.operationTimeoutMs, heartbeatIntervalMs: options.heartbeatIntervalMs });
   return { connections, supervisor, leases };

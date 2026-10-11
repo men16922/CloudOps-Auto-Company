@@ -16,7 +16,7 @@ export const membershipSchema = z.object({
   roles: z.array(z.enum(['viewer', 'operator', 'reviewer'])).min(1).max(3),
   version: z.number().int().positive(), updatedAt: z.iso.datetime(),
 }).strict();
-export type OrganizationMembership = z.infer<typeof membershipSchema>;
+type OrganizationMembership = z.infer<typeof membershipSchema>;
 export type OrganizationWebSession = Readonly<{ identity: VerifiedWebIdentity; context: VerifiedCloudContext; membershipVersion: number }>;
 export function membershipKey(organizationId: string, workspaceId: string, actorId: string) {
   return `membership:${createHash('sha256').update(JSON.stringify([organizationId, workspaceId, actorId])).digest('hex')}`;

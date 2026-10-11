@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const account = z.string().regex(/^\d{12}$/);
 /** One finding as recorded at the end of a sync (no console link; the browser re-derives labels). */
-export const snapshotFindingSchema = z.object({
+const snapshotFindingSchema = z.object({
   id: z.string().min(1).max(400), severity: z.enum(['critical', 'warning', 'info']), kind: z.string().regex(/^[a-z-]{1,32}$/), subject: z.string().max(300), detail: z.string().max(300),
   source: z.string().regex(/^[a-z]{1,32}$/), accountId: account.optional(), region: z.string().regex(/^[a-z0-9-]{1,32}$/).optional(), value: z.number().finite().optional(),
   metric: z.string().regex(/^[a-z0-9_]{1,32}$/).optional(),

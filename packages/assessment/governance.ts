@@ -2,7 +2,7 @@ import type { InventoryUnit } from '../contracts/aws/inventory';
 import type { Located, Service, ServiceData } from './operations-assessment';
 
 /** Resource services checked for the organization's required tag keys. */
-export const taggedServices: Service[] = ['ec2', 'eks', 'rds', 'elasticache', 'msk', 'lambda', 'dynamodb', 'apigateway'];
+const taggedServices: Service[] = ['ec2', 'eks', 'rds', 'elasticache', 'msk', 'lambda', 'dynamodb', 'apigateway'];
 export type TagStatus = 'compliant' | 'missing' | 'unknown';
 export type TagRow = Located & { service: Service; status: TagStatus; missing: string[] };
 

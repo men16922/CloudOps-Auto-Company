@@ -7,10 +7,10 @@ const account = z.string().regex(/^\d{12}$/), region = z.string().regex(/^[a-z]{
 export const inventoryUnitSchema = z.object({ accountId: account, region, service: z.enum(connectionServices), collectedAt: z.iso.datetime(), hasMore: z.boolean(),
   items: z.array(connectionItemSchema).max(100), source: z.enum(['direct', 'config']), code: code.optional() }).strict();
 /** A region counts as in use only when it has at least one VPC carrying a tag (enabled but unused regions are excluded). */
-export const accountRegionSchema = z.object({ region, vpcs: z.number().int().min(0).max(5000), taggedVpcs: z.number().int().min(0).max(5000) }).strict();
-export const syncAccountSchema = z.object({ accountId: account, name: z.string().min(1).max(128).optional(), lifecycle: accountLifecycleSchema.optional(),
+const accountRegionSchema = z.object({ region, vpcs: z.number().int().min(0).max(5000), taggedVpcs: z.number().int().min(0).max(5000) }).strict();
+const syncAccountSchema = z.object({ accountId: account, name: z.string().min(1).max(128).optional(), lifecycle: accountLifecycleSchema.optional(),
   access: z.enum(['pending', 'verified', 'denied', 'failed']), code: code.optional(), regions: z.array(accountRegionSchema).max(40), candidateRegions: z.number().int().min(0).max(40) }).strict();
-export const syncUnitRefSchema = z.object({ id: z.uuid(), accountId: account, region, service: z.enum(connectionServices), count: z.number().int().min(0).max(100), code: code.optional() }).strict();
+const syncUnitRefSchema = z.object({ id: z.uuid(), accountId: account, region, service: z.enum(connectionServices), count: z.number().int().min(0).max(100), code: code.optional() }).strict();
 export const syncJobSchema = z.object({ connectionId: z.uuid(), jobId: z.uuid(), mode: z.enum(['direct', 'config']), state: z.enum(['running', 'completed', 'partial', 'failed', 'cancelled', 'expired']),
   startedAt: z.iso.datetime(), finishedAt: z.iso.datetime().optional(), progress: z.object({ done: z.number().int().min(0), total: z.number().int().min(0) }).strict(),
   accounts: z.array(syncAccountSchema).max(200), units: z.array(syncUnitRefSchema).max(6000), code: code.optional() }).strict();

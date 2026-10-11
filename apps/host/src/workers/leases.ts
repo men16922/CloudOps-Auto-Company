@@ -6,8 +6,8 @@ import { bindingDigest, cliBindingSchema, type CliBinding } from '../../../../pa
 import { leaseIdentity, workerLeaseHandleSchema, type WorkerLeaseHandle } from '../../../../packages/worker-protocol/lease-handle';
 
 const time = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
-export const workerLeaseReasonSchema = z.enum(['expired', 'clock_changed', 'provisioning_uncertain', 'transport_lost', 'shutdown', 'revoked']);
-export const workerLeaseSchema = z.object({
+const workerLeaseReasonSchema = z.enum(['expired', 'clock_changed', 'provisioning_uncertain', 'transport_lost', 'shutdown', 'revoked']);
+const workerLeaseSchema = z.object({
   schemaVersion: z.literal(1), ...leaseIdentity, state: z.enum(['provisioning', 'ready', 'unknown', 'retired']),
   createdAt: time, observedAt: time, expiresAt: time, lossReason: workerLeaseReasonSchema.optional(), retiredAt: time.optional(),
 }).strict().superRefine((value, ctx) => {
@@ -20,7 +20,7 @@ export type WorkerLease = z.infer<typeof workerLeaseSchema>;
 export type WorkerLeaseReason = z.infer<typeof workerLeaseReasonSchema>;
 /** Trusted provisioner receipts only. Never deserialize these from a browser or worker reply. */
 export const workerReadyReceiptSchema = z.object({ ...leaseIdentity, ready: z.literal(true) }).strict();
-export const workerRetirementReceiptSchema = z.object({ ...leaseIdentity, stopped: z.literal(true), cacheAccessRevoked: z.literal(true) }).strict();
+const workerRetirementReceiptSchema = z.object({ ...leaseIdentity, stopped: z.literal(true), cacheAccessRevoked: z.literal(true) }).strict();
 export type WorkerReadyReceipt = z.infer<typeof workerReadyReceiptSchema>;
 export type WorkerRetirementReceipt = z.infer<typeof workerRetirementReceiptSchema>;
 const claimSchema = z.object({ bindingDigest: z.string().regex(/^[a-f0-9]{64}$/), supervisorId: z.uuid(), handle: workerLeaseHandleSchema }).strict()

@@ -12,7 +12,7 @@ const root = await mkdtemp(join(tmpdir(), 'cloudops-org-web-'));
 const base = '/api/organizations/v1/synthetic-org/workspaces/synthetic-workspace/aws/connections';
 const accounts = { 'synthetic-user-a': '123456789012', 'synthetic-user-b': '999999999999' };
 const ids = { 'synthetic-user-a': '11111111-1111-4111-8111-111111111111', 'synthetic-user-b': '22222222-2222-4222-8222-222222222222' };
-const created = new Set(), states = new Map(), keys = new Set(), syncs = new Map(), views = new Map(), alertStatus = new Map(); let revoked = false, directoryDenied = false, cursorsExpired = false;
+const created = new Set(), states = new Map(), keys = new Set(), syncs = new Map(), views = new Map(); let revoked = false, directoryDenied = false, cursorsExpired = false;
 const member = '210987654321', unassigned = '310987654321';
 let browser, server;
 try {
@@ -80,7 +80,6 @@ try {
         ];
         if (path === `${base}/${row.id}/report` && request.method === 'GET') { send(200, { snapshots: syncs.has(actor) ? reportSnapshots : [] }); return; }
         if (path === `${base}/${row.id}/views` && request.method === 'GET') { send(200, { items: views.get(actor) ?? [] }); return; }
-        if (path === `${base}/${row.id}/alerts` && request.method === 'GET') { send(200, alertStatus.get(actor) ?? { configured: true, recipients: ['o•••@example.invalid'], minSeverity: 'warning', detail: 'full', history: [] }); return; }
         if (request.method !== 'POST') { send(404, {}); return; }
         let text = ''; for await (const chunk of request) text += chunk;
         const body = JSON.parse(text); const key = request.headers['idempotency-key'];
@@ -93,27 +92,11 @@ try {
           views.set(actor, body.operation === 'save' ? [...list.filter(item => item !== existing), { id: existing?.id ?? crypto.randomUUID(), updatedAt: '2026-10-11T00:03:00.000Z', view: body.view }] : list.filter(item => item.id !== body.id));
           send(200, { items: views.get(actor) }); return;
         }
-        if (path === `${base}/${row.id}/alerts`) {
-          // The browser can only ask for the fixed test message; recipients and content are server settings.
-          expect(body).toEqual({ operation: 'test' });
-          alertStatus.set(actor, { configured: true, recipients: ['o•••@example.invalid'], minSeverity: 'warning', detail: 'full', history: [{ at: '2026-10-11T00:04:00.000Z', kind: 'test', outcome: 'sent', count: 0 }] });
-          send(200, alertStatus.get(actor)); return;
-        }
         if (path !== `${base}/${row.id}/actions`) { send(404, {}); return; }
         if (body.operation === 'login') { states.set(actor, 'awaiting-user'); const result = state(); delete result.userCode; delete result.verificationUri; delete result.verificationUriComplete; send(200, result); return; }
         if (body.operation === 'sync') { expect(Object.keys(body)).toEqual(['operation']); syncs.set(actor, crypto.randomUUID()); send(200, summary('running')); return; }
-        if (body.operation === 'inspect') {
-          expect(Object.keys(body).sort()).toEqual(['operation', 'service']);
-          // A service whose API the connected role may not call: the worker rejects only that read.
-          if (body.service === 'msk') { send(409, { code: 'read_access_denied' }); return; }
-          const synthetic = { lambda: [{ name: `synthetic-${actor}-resource`, runtime: 'python3.8' }], alarms: [{ name: 'synthetic-api-errors', state: 'ALARM' }, { name: 'synthetic-cpu', state: 'OK' }],
-            ec2: [{ id: 'i-0123456789abcdef0', name: 'synthetic-batch', state: 'stopped', type: 't3.micro' }, { id: 'i-0123456789abcdef1', name: 'synthetic-web', state: 'running', type: 't3.large' }], dynamodb: [{ name: 'synthetic-orders' }],
-            eks: [{ name: 'synthetic-legacy', state: 'ACTIVE', version: '1.33', support: 'EXTENDED_SUPPORT', type: 'eks.20' }],
-            rds: [{ name: 'synthetic-db', state: 'available', type: 'db.t4g.micro', version: 'postgres 16.4' }], elasticache: [{ name: 'synthetic-cache', state: 'available', type: 'cache.t4g.micro', version: 'valkey 8.0' }],
-            metrics: [{ name: 'i-0123456789abcdef1', id: 'i-0123456789abcdef1', metric: 'ec2_cpu', value: 50, peak: 96 }, { name: 'synthetic-db', metric: 'rds_storage', value: 3 * 1024 ** 3, peak: 1.5 * 1024 ** 3 }] }[body.service];
-          expect(synthetic).toBeTruthy();
-          send(200, { connectionId: row.id, accountId: row.accountId, region: row.region, operation: body.service, collectedAt: '2026-10-10T00:00:00Z', items: synthetic, hasMore: false }); return;
-        }
+        // The dashboard reads through sync only; single-service reads are a host/worker API for verification tools.
+        expect(body.operation).not.toBe('inspect');
         if (body.operation === 'directory') {
           expect(Object.keys(body).sort()).toEqual(body.cursor ? ['cursor', 'operation'] : ['operation']);
           if (body.cursor && cursorsExpired) { send(409, { code: 'directory_cursor_expired' }); return; }
@@ -245,9 +228,6 @@ try {
     const text = await readFile(await file.path(), 'utf8'); expect(text).toContain('synthetic-old-alarm'); expect(text).not.toContain('<script');
   }
   await page.getByRole('button', { name: '30일', exact: true }).click(); await expect(page.getByRole('heading', { name: '운영 리포트 · 최근 30일', level: 2 })).toBeVisible();
-  // E-mail alerts: masked recipients from the server and one fixed test message per click.
-  await expect(page.getByRole('heading', { name: '이메일 알림', level: 2 })).toBeVisible(); await expect(page.getByText('o•••@example.invalid', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '테스트 메일 보내기' }).click(); await expect(page.getByText(/^테스트 메일을 보냈습니다\./)).toBeVisible();
   await nav.getByRole('link', { name: '수명주기(EOS)', exact: true }).click(); await expect(page.getByRole('heading', { name: /^수명주기\(EOS\)/, level: 2 })).toBeVisible();
   await expect(page.getByRole('cell', { name: 'Kubernetes 1.33', exact: true })).toBeVisible(); await expect(page.getByRole('button', { name: 'CSV 내보내기' })).toBeEnabled();
   const download = page.waitForEvent('download'); await page.getByRole('button', { name: 'CSV 내보내기' }).click(); expect((await download).suggestedFilename()).toMatch(/^lifecycle-eos-\d{4}-\d{2}-\d{2}\.csv$/);
@@ -290,7 +270,7 @@ try {
   await page.getByRole('button', { name: '웹 로그아웃', exact: true }).click(); await expect(page.getByRole('button', { name: '조직 웹 로그인', exact: true })).toBeVisible();
   await page.getByRole('combobox', { name: 'Language / 언어' }).selectOption('en'); await page.reload(); await expect(page.getByRole('button', { name: 'Sign in to organization', exact: true })).toBeVisible();
   expect(errors).toEqual([]); expect(await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).not.toContain('synthetic-user');
-  console.log('Organization web synthetic contract passed: sign-in, payer select, one-click device code with code-carrying link, first sync and progress, saved views, operations report (trend, new/resolved, exports, e-mail alert status and test), multi-account inventory with account/region columns, scope filter, search conditions, serverless tabs, Systems Manager, security posture, tag compliance, AWS Health, tagged-VPC region usage, derived status/findings/console links, scoped directory pages/OU navigation/expiry/lifecycle/filter/partial denial, user switch, membership revocation, logout and reload.');
+  console.log('Organization web synthetic contract passed: sign-in, payer select, one-click device code with code-carrying link, first sync and progress, saved views, operations report (trend, new/resolved, exports), multi-account inventory with account/region columns, scope filter, search conditions, serverless tabs, Systems Manager, security posture, tag compliance, AWS Health, tagged-VPC region usage, derived status/findings/console links, scoped directory pages/OU navigation/expiry/lifecycle/filter/partial denial, user switch, membership revocation, logout and reload.');
 } catch (error) {
   const page = browser?.contexts()[0]?.pages()[0];
   if (page) { const directory = process.env.CLOUDOPS_SCREENSHOT_DIR ?? 'test-results/screenshots'; await mkdir(directory, { recursive: true }); await page.screenshot({ path: join(directory, 'organization-web-failure.png'), fullPage: true }); console.error(await page.locator('body').ariaSnapshot()); }

@@ -1,7 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createServer as createTlsServer } from 'node:https';
 import { once } from 'node:events';
-import { statSync } from 'node:fs';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { z } from 'zod';
@@ -22,7 +21,7 @@ const securityHeaders = (connect: string[]) => ({
   'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY', 'Cross-Origin-Opener-Policy': 'same-origin',
   'Content-Security-Policy': `default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src ${["'self'", ...connect].join(' ')}; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'`,
 });
-export const localHostSchema = z.object({
+const localHostSchema = z.object({
   host: z.enum(['127.0.0.1', 'localhost']),
   port: z.number().int().min(1024).max(65_535),
 }).strict();
@@ -34,7 +33,7 @@ export function checkedConfiguration(deploymentInput: unknown, webIdentity?: unk
   const deployment = organizationDeploymentSchema.parse(deploymentInput);
   const verifierConfig = webIdentity === undefined ? undefined : oidcVerifierConfigSchema.parse(webIdentity);
   if (deployment.samlBridge && verifierConfig) throw new Error('A SAML bridge supplies its own verifier; remove CLOUDOPS_WEB_IDENTITY.');
-  const browser = deployment.web.configured && deployment.web.identity.method === 'company' ? deployment.web.identity.oidc : undefined;
+  const browser = deployment.web.configured ? deployment.web.identity.oidc : undefined;
   if (browser && verifierConfig && (browser.issuer !== verifierConfig.issuer || (browser.bearer === 'id_token' && verifierConfig.audience !== browser.clientId))) {
     throw new Error('The browser OIDC issuer/client must match the server verifier issuer/audience.');
   }
@@ -55,10 +54,6 @@ export function deploymentSummary(deploymentInput: unknown, webIdentity?: unknow
     if (browser && new URL(browser.tokenEndpoint).protocol === 'http:') warnings.push('browser OIDC endpoints use http loopback; use https outside local verification.');
   }
   if (new URL(deployment.publicOrigin).protocol === 'http:') warnings.push('publicOrigin is http loopback; production requires https.');
-  const email = deployment.notifications?.email;
-  // The password file is checked for presence and permissions only; its content is never read here.
-  const passwordFile = email ? (() => { try { const info = statSync(email.smtp.passwordFile); return !info.isFile() ? 'missing' : info.mode & 0o077 ? 'too-permissive' : 'ok'; } catch { return 'missing'; } })() : undefined;
-  if (email && passwordFile !== 'ok') warnings.push(`SMTP password file is ${passwordFile}: create it with mode 0600 before alerts can be sent.`);
   return {
     publicOrigin: deployment.publicOrigin.startsWith('https:') ? `https://${host(deployment.publicOrigin)}` : deployment.publicOrigin,
     web: deployment.web.configured ? { scope: `${deployment.web.scope.organizationId}/${deployment.web.scope.workspaceId}`, browserOidc: browser ? { bearer: browser.bearer, scope: browser.scope } : null } : null,
@@ -66,8 +61,6 @@ export function deploymentSummary(deploymentInput: unknown, webIdentity?: unknow
     verifier: verifierConfig ? { algorithms: verifierConfig.algorithms, jwks: 'uri' in verifierConfig.jwks ? 'remote' : 'static', tenant: Boolean(verifierConfig.tenant) } : null,
     connections: deployment.connections.map(item => ({ configurationId: item.configurationId, account: mask(item.accountId), roleName: item.roleName, region: item.region,
       ssoRegion: item.ssoRegion, startUrlHost: host(item.startUrl), directory: Boolean(item.directory) })),
-    notifications: email ? { email: { relay: `${host(`https://${email.smtp.host}`)}:${email.smtp.port} ${email.smtp.security}`, passwordFile,
-      routes: email.routes.map(route => ({ configurationId: route.configurationId, recipients: route.to.length, minSeverity: route.minSeverity, detail: route.detail })) } } : null,
     warnings,
   };
 }

@@ -6,7 +6,7 @@ type RuntimeDates = { deprecation: string; blockCreate?: string; blockUpdate?: s
 const r = (deprecation: string, blockCreate?: string, blockUpdate?: string): RuntimeDates => ({ deprecation, ...(blockCreate ? { blockCreate } : {}), ...(blockUpdate ? { blockUpdate } : {}) });
 const many = (names: string[], dates: RuntimeDates) => Object.fromEntries(names.map(name => [name, dates]));
 /** AWS Lambda runtimes page: deprecation / block function create / block function update. */
-export const lambdaRuntimes: Record<string, RuntimeDates> = {
+const lambdaRuntimes: Record<string, RuntimeDates> = {
   'provided.al2': r('2026-07-31', '2027-07-29', '2027-08-31'),
   ...many(['nodejs20.x'], r('2026-04-30', '2027-07-29', '2027-08-31')), ...many(['ruby3.2'], r('2026-03-31', '2027-07-29', '2027-08-31')),
   ...many(['python3.9'], r('2025-12-15', '2027-07-29', '2027-08-31')), ...many(['nodejs18.x'], r('2025-09-01', '2027-07-29', '2027-08-31')),

@@ -10,7 +10,7 @@ export type FilterField<T> = { key: string; label: string; value: (item: T) => s
 const pageSize = 50;
 
 /** PropertyFilter i18n shared by every resource table. */
-export function usePropertyFilterStrings(): PropertyFilterProps.I18nStrings {
+function usePropertyFilterStrings(): PropertyFilterProps.I18nStrings {
   const { t } = useLanguage();
   return { filteringAriaLabel: t('검색 조건', 'Search conditions'), filteringPlaceholder: t('검색 조건 추가 (예: 계정 = …, 리전 = …, 상태 = …)', 'Add a condition (e.g. account = …, region = …, state = …)'),
     dismissAriaLabel: t('닫기', 'Dismiss'), groupValuesText: t('값', 'Values'), groupPropertiesText: t('속성', 'Properties'), operatorsText: t('연산자', 'Operators'),
@@ -37,7 +37,7 @@ export function matches<T>(item: T, query: PropertyFilterProps.Query, fields: Fi
 }
 
 /** CSV of the rows currently matching the search conditions (user action; generated in the browser, nothing is stored). */
-export function downloadCsv<T>(name: string, rows: T[], fields: FilterField<T>[]) {
+function downloadCsv<T>(name: string, rows: T[], fields: FilterField<T>[]) {
   const cell = (value: string | undefined) => { const text = (value ?? '').replace(/"/g, '""'); return /^[=+\-@\t\r]/.test(text) ? `"'${text}"` : `"${text}"`; };
   const csv = [fields.map(field => cell(field.label)).join(','), ...rows.map(row => fields.map(field => cell(field.value(row))).join(','))].join('\r\n');
   const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' })), link = document.createElement('a');

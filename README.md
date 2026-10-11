@@ -7,7 +7,7 @@
 | 경로 | 내용 |
 |---|---|
 | `apps/web/` | 브라우저 화면 (React + Cloudscape): 대시보드, 서비스별 목록, 운영 리포트, 거버넌스, 조직 계정 |
-| `apps/host/` | API 서버: 웹 로그인 확인, 연결·저장소, worker 관리, 결과 캐시, 리포트 기록, 이메일 알림 |
+| `apps/host/` | API 서버: 웹 로그인 확인, 연결·저장소, worker 관리, 결과 캐시, 리포트 기록 |
 | `apps/worker/` | 사용자별 Docker 컨테이너에서 AWS CLI로 조회하는 수집기 |
 | `packages/contracts/` | 웹과 호스트가 공유하는 데이터 형식 |
 | `packages/assessment/` | 화면과 호스트가 공유하는 판정 규칙 (조치·주의, EOS, 보안, 리포트 비교) |
@@ -31,13 +31,13 @@ make dev               # 웹만 (127.0.0.1:5175)
 npm run start:local    # 빌드된 웹+API를 같은 loopback origin(127.0.0.1:5176)에서 실행
 ```
 
-`make check`는 합성 데이터만 쓰고 실제 AWS CLI·Docker·회사 로그인·메일 서버에 연결하지 않습니다. 실제 Docker나 DynamoDB Local이 필요한 검증은 `npm run verify:*`로 따로 실행합니다.
+`make check`는 합성 데이터만 쓰고 실제 AWS CLI·Docker·회사 로그인에 연결하지 않습니다. 실제 Docker나 DynamoDB Local이 필요한 검증은 `npm run verify:*`로 따로 실행합니다.
 
 ## 문서
 
 - [현재 상태](docs/STATUS.md) · [다음 작업](docs/NEXT_PLAN.md) · [작업 기록](docs/PROGRESS_LOG.md)
 - [레포 구조](docs/architecture/overview.md) · [인증과 사용자 격리](docs/architecture/identity.md)
-- [API·로컬 호스트·이메일 알림 구성](deploy/organization-api.md) · [웹 로그인과 대시보드](deploy/organization-web.md) · [worker 계약](deploy/organization-cli-worker/README.md)
+- [API·로컬 호스트 구성](deploy/organization-api.md) · [웹 로그인과 대시보드](deploy/organization-web.md) · [worker 계약](deploy/organization-cli-worker/README.md)
 
 ## 범위와 한계
 

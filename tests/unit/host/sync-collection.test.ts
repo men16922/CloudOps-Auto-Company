@@ -8,8 +8,6 @@ import { OrganizationWebAccess, identityActor } from '../../../apps/host/src/ide
 import { SqliteCloudStore } from '../../../apps/host/src/storage/sqlite-store';
 import { OrganizationConnections, type OrganizationWorkerTransport } from '../../../apps/host/src/connections/connections';
 import { FileObservationCache } from '../../../apps/host/src/connections/observation-cache';
-import { EmailAlerts } from '../../../apps/host/src/notifications/email-alerts';
-import type { MailMessage } from '../../../apps/host/src/notifications/smtp';
 import { CloudOperationError } from '../../../packages/contracts/errors';
 import type { InventoryUnit, SyncJob } from '../../../packages/contracts/aws/inventory';
 
@@ -19,7 +17,7 @@ const config = { configurationId: 'aws-read', label: 'Synthetic AWS', organizati
 const errorCode = (expected: string) => (error: unknown) => error instanceof CloudOperationError && error.code === expected;
 const unit = (accountId: string, region: string, service: InventoryUnit['service'], names: string[]): InventoryUnit => ({ accountId, region, service, collectedAt: '2026-10-11T00:00:00.000Z', hasMore: false, items: names.map(name => ({ name })), source: 'direct' });
 
-async function fixture(t: TestContext, options: { alerts?: (cache: FileObservationCache) => EmailAlerts } = {}) {
+async function fixture(t: TestContext) {
   const directory = await mkdtemp(join(tmpdir(), 'cloudops-sync-host-')), store = new SqliteCloudStore(join(directory, 'cloud.sqlite'));
   const identities = { async verify(token: string) { return { actorId: identityActor(issuer, token === 'valid-a' ? 'employee-a' : 'employee-b'), expiresAt: 1_800_003_600_000 }; } };
   const access = new OrganizationWebAccess(identities, store, () => 1_800_000_000_000);
@@ -40,7 +38,7 @@ async function fixture(t: TestContext, options: { alerts?: (cache: FileObservati
     return { ok: false, code: 'unsupported' };
   } };
   const cache = new FileObservationCache(join(directory, 'observations'));
-  const connections = new OrganizationConnections(store, access, transport, [config], () => 1_800_000_000_000, cache, options.alerts?.(cache));
+  const connections = new OrganizationConnections(store, access, transport, [config], () => 1_800_000_000_000, cache);
   t.after(async () => { await connections.close(); store.close(); await rm(directory, { recursive: true, force: true }); });
   const add = (value: InventoryUnit) => { const id = randomUUID(); units.set(id, value); job!.units.push({ id, accountId: value.accountId, region: value.region, service: value.service, count: value.items.length }); return id; };
   return { connections, cache, directory, fetched, add, job: () => job!, tamper: () => { tamper = true; },
@@ -144,26 +142,18 @@ test('saved views are per-user server settings: upsert by name, idempotent reque
   assert.equal(removed.items.length, 29); assert.ok(!removed.items.some(item => item.id === saved.items[0]!.id));
 });
 
-test('after a sync starts the host drains its results without the browser, records the snapshot and sends the alert once', async t => {
-  const mails: MailMessage[] = [];
-  const s = await fixture(t, { alerts: cache => new EmailAlerts({ cache, labels: new Map([['aws-read', 'Synthetic AWS']]), publicOrigin: 'http://127.0.0.1:5176', now: () => 1_800_000_000_000, send: async message => { mails.push(message); },
-    config: { from: 'alerts@example.invalid', smtp: { host: 'smtp.example.invalid', port: 465, security: 'tls', username: 'alerts@example.invalid', passwordFile: '/synthetic/password' }, routes: [{ configurationId: 'aws-read', to: ['ops@example.invalid'] }] } }) });
-  const session = await s.session(), connection = await s.connections.create(session, { configurationId: 'aws-read', requestKey: randomUUID() });
+test('after a sync starts the host collects its results without the browser and records the snapshot once', async t => {
+  const s = await fixture(t), session = await s.session(), connection = await s.connections.create(session, { configurationId: 'aws-read', requestKey: randomUUID() });
   s.connections.followIntervalMs = 10;
   await s.connections.perform(session, connection.id, { requestKey: randomUUID(), operation: 'sync' });
   s.add(unit('111111111111', 'ap-northeast-2', 'alarms', [])); s.add(unit('222222222222', 'eu-west-1', 'ec2', ['member-web']));
   Object.assign(s.job(), { state: 'completed', finishedAt: new Date(1_800_000_000_000 - 60_000).toISOString() });
   // No syncStatus call: nobody keeps the page open.
-  for (let wait = 0; wait < 200 && !mails.length; wait += 1) await new Promise(resolve => setTimeout(resolve, 10));
-  await s.connections.idle();
+  for (let wait = 0; wait < 200 && !(await s.connections.report(session, connection.id)).snapshots.length; wait += 1) await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(s.fetched.length, 2, 'every finished unit was fetched by the host');
   assert.equal((await s.connections.inventory(session, connection.id, 'all')).units.length, 2);
   assert.equal((await s.connections.report(session, connection.id)).snapshots.length, 1);
-  assert.equal(mails.length, 1); assert.match(mails[0]!.subject, /Synthetic AWS/);
-  const status = await s.connections.alerts(session, connection.id);
-  assert.deepEqual([status.configured, status.recipients, status.history.map(event => [event.kind, event.outcome])], [true, ['o•••@example.invalid'], [['baseline', 'sent']]]);
-  // The browser's poll after the fact finds the job done and sends nothing again.
-  const summary = await s.connections.syncStatus(session, connection.id); await s.connections.idle();
-  assert.deepEqual([summary.remaining, mails.length], [0, 1]);
-  await assert.rejects(s.connections.alerts(await s.session('valid-b'), connection.id), errorCode('connection_unavailable'), 'another user cannot read the alert status');
+  // The browser's poll after the fact finds the job done and records nothing again.
+  const summary = await s.connections.syncStatus(session, connection.id);
+  assert.deepEqual([summary.remaining, (await s.connections.report(session, connection.id)).snapshots.length, s.fetched.length], [0, 1, 2]);
 });

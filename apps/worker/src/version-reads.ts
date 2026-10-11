@@ -37,7 +37,7 @@ export function rdsLifecycles(raw: string) {
   return result;
 }
 /** "postgres 16.4" → postgres|16; "aurora-mysql 8.0.mysql_aurora.3.05.2" → aurora-mysql|8.0; "mariadb 10.11.6" → mariadb|10.11. */
-export function rdsMajorKey(version: string | undefined) {
+function rdsMajorKey(version: string | undefined) {
   const [engine, engineVersion] = (version ?? '').split(' ');
   if (!engine || !engineVersion) return undefined;
   const parts = engineVersion.split('.');

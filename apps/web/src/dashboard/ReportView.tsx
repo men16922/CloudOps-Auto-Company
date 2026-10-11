@@ -11,9 +11,7 @@ import SpaceBetween from '@cloudscape-design/components/space-between';
 import StatusIndicator from '@cloudscape-design/components/status-indicator';
 import type { TableProps } from '@cloudscape-design/components/table';
 import { useLanguage } from '../i18n';
-import type { AlertStatus } from '../../../../packages/contracts/aws/alerts';
 import type { ReportSnapshot, SnapshotFinding } from '../../../../packages/contracts/aws/report';
-import AlertPanel from './AlertPanel';
 import ResourceTable, { type FilterField } from './ResourceTable';
 import type { EosRow, EosStatus } from '../../../../packages/assessment/eos-rules';
 import { compareSnapshots, reportHtml, reportMarkdown, type ReportDocument, type ReportScope, type ResolvedFinding } from '../../../../packages/assessment/report';
@@ -23,11 +21,10 @@ import { downloadText } from './download';
 const seriesColor = { critical: '#d91515', warning: '#b88a00' };
 type Props = { snapshots?: ReportSnapshot[]; scope: ReportScope; scopeText: string; eos: EosRow[]; eosLabel: (status: EosStatus) => string;
   accountLabel: (id: string) => string; accountName: (id: string) => string | undefined; describe: (finding: SnapshotFinding) => { subject: string; detail: string };
-  table: (id: string) => { query: PropertyFilterProps.Query; onQueryChange: (query: PropertyFilterProps.Query) => void };
-  alerts?: AlertStatus; onTestAlert: () => Promise<string | undefined>; onRefreshAlerts: () => void };
+  table: (id: string) => { query: PropertyFilterProps.Query; onQueryChange: (query: PropertyFilterProps.Query) => void } };
 
 /** Weekly/monthly operations report from the host's per-sync snapshots. Only what was collected is compared; read failures are never "resolved". */
-export default function ReportView({ snapshots, scope, scopeText, eos, eosLabel, accountLabel, accountName, describe, table, alerts, onTestAlert, onRefreshAlerts }: Props) {
+export default function ReportView({ snapshots, scope, scopeText, eos, eosLabel, accountLabel, accountName, describe, table }: Props) {
   const { t, locale } = useLanguage();
   const [period, setPeriod] = useState('7');
   const comparison = useMemo(() => snapshots ? compareSnapshots(snapshots, Number(period), scope) : undefined, [snapshots, period, scope]);
@@ -50,8 +47,7 @@ export default function ReportView({ snapshots, scope, scopeText, eos, eosLabel,
   const daysLeft = (row: EosRow) => row.daysLeft === undefined ? '—' : row.daysLeft < 0 ? t(`${-row.daysLeft}일 지남`, `${-row.daysLeft} days ago`) : t(`${row.daysLeft}일`, `${row.daysLeft} days`);
   const retention = t('동기화가 끝날 때마다 호스트 디스크 캐시에 판정 결과를 기록합니다. 최근 48시간은 모두, 그 이전은 하루 1개씩 35일간 보관합니다.', 'Each finished sync records its assessment in the host disk cache: every sync from the last 48 hours, then one per day for 35 days.');
 
-  const alertPanel = <AlertPanel status={alerts} onTest={onTestAlert} onRefresh={onRefreshAlerts} />;
-  if (!comparison) return <SpaceBetween size="l"><Alert type="info" header={t('아직 리포트 기록이 없습니다', 'No report history yet')}>{t(`동기화가 끝나면 첫 기록이 생기고, 두 번째 동기화부터 변화(신규·해결)와 추이를 보여 줍니다. ${retention}`, `The first record is created when a sync finishes; changes (new and resolved) and trends appear from the second sync. ${retention}`)}</Alert>{alertPanel}</SpaceBetween>;
+  if (!comparison) return <SpaceBetween size="l"><Alert type="info" header={t('아직 리포트 기록이 없습니다', 'No report history yet')}>{t(`동기화가 끝나면 첫 기록이 생기고, 두 번째 동기화부터 변화(신규·해결)와 추이를 보여 줍니다. ${retention}`, `The first record is created when a sync finishes; changes (new and resolved) and trends appear from the second sync. ${retention}`)}</Alert></SpaceBetween>;
   const { latest, baseline, current, previous, added, resolved, trend } = comparison, verified = resolved.filter(item => item.verified);
   const periodText = t(`최근 ${period}일`, `Last ${period} days`);
   const baselineText = baseline ? t(`비교 기준: ${time(baseline.at)}${comparison.baselineShort ? ' (기록이 기간보다 짧아 가장 오래된 기록과 비교)' : ''}`, `Compared with ${time(baseline.at)}${comparison.baselineShort ? ' (history is shorter than the period; oldest record used)' : ''}`)
@@ -128,6 +124,5 @@ export default function ReportView({ snapshots, scope, scopeText, eos, eosLabel,
         { id: 'where', header: t('계정 · 리전', 'Account · Region'), cell: row => `${accountName(row.accountId) ?? row.accountId} · ${row.region}` },
       ]} />
     <Box color="text-body-secondary" fontSize="body-s">{notes.slice(-2).join(' ')}</Box>
-    {alertPanel}
   </SpaceBetween>;
 }

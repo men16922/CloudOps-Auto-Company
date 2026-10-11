@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { assessOperations, consoleLink, serviceData, withDirectReads, type Service } from '../../../packages/assessment/operations-assessment';
+import { assessOperations, consoleLink, serviceData, type Service } from '../../../packages/assessment/operations-assessment';
 import { lambdaRuntimeStatus, lifecycleRows } from '../../../packages/assessment/eos-rules';
 import type { InventoryUnit } from '../../../packages/contracts/aws/inventory';
 
@@ -129,14 +129,4 @@ test('governance: Security Hub/GuardDuty aggregate per account/region, "not enab
   assert.deepEqual(result.findings.filter(item => item.kind === 'tags').map(item => [item.subject, item.value, item.detail]), [['ec2', 2, 'CostCenter, Owner']]);
   assert.deepEqual([result.metrics.securityhub?.off, result.metrics.guardduty?.threats, result.metrics.health?.unavailable], [1, 1, 1]);
   assert.equal(assessOperations(undefined, group([unit('ec2', [{ id: 'i-0123456789abcdef0', name: 'web', tags: [] }])]), undefined, now).findings.filter(item => item.kind === 'tags').length, 0, 'no required tags configured, no tag findings');
-});
-
-test('single-connection reads fill places the multi-account inventory has not read, never replacing an inventory unit', () => {
-  const page = (operation: 'lambda' | 'ec2', region: string) => ({ connectionId: '11111111-1111-4111-8111-111111111111', accountId: '123456789012', region, operation, collectedAt: '2026-10-10T00:00:00.000Z', items: [{ name: `synthetic-${operation}-${region}` }], hasMore: false });
-  const synced = unit('lambda', [{ name: 'synthetic-synced' }]);
-  const merged = withDirectReads({ lambda: [synced] }, { lambda: page('lambda', 'ap-northeast-2'), ec2: page('ec2', 'us-east-1') });
-  assert.deepEqual(merged.lambda?.map(value => value.items[0]?.name), ['synthetic-synced'], 'the synced unit for the same place wins');
-  assert.deepEqual(merged.ec2?.map(value => [value.region, value.source, value.items[0]?.name]), [['us-east-1', 'direct', 'synthetic-ec2-us-east-1']]);
-  assert.equal(assessOperations(undefined, serviceData(merged), undefined, now).overall, 'clear');
-  assert.equal(assessOperations(undefined, serviceData(withDirectReads({}, {})), undefined, now).overall, 'unknown');
 });

@@ -39,8 +39,9 @@ try {
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   await expect(page.getByRole('heading', { name: '조직 AWS 계정 상태', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: /Google Cloud|On-Prem|개인용|합성 데모/ })).toHaveCount(0);
-  await page.getByRole('button', { name: '합성 계정 예시 보기', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Production · Example', exact: true })).toBeVisible();
+  // Unconfigured sign-in shows guidance only: no synthetic or demo accounts in the company build.
+  await expect(page.getByText('조직 로그인이 설정되지 않았습니다', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /예시|Example/ })).toHaveCount(0);
   const directory = process.env.CLOUDOPS_SCREENSHOT_DIR ?? 'test-results/screenshots'; await mkdir(directory, { recursive: true });
   await page.screenshot({ path: join(directory, 'company-aws-module.png'), fullPage: true });
   await page.getByRole('combobox', { name: 'Language / 언어' }).selectOption('en'); await page.reload();
@@ -54,7 +55,7 @@ try {
   expect(errors).toEqual([]); expect(calls.filter(url => new URL(url).pathname !== '/api/organizations/config')).toEqual([]);
   await checkLocalHost(browser);
   await checkSamlLocalHost(browser);
-  console.log('Company artifacts passed: independent API routes, unconfigured fail-closed, web preview, language reload, mobile navigation and the loopback host with synthetic OIDC and Identity Center SAML popup sign-in.');
+  console.log('Company artifacts passed: independent API routes, unconfigured fail-closed, unconfigured web guidance, language reload, mobile navigation and the loopback host with synthetic OIDC and Identity Center SAML popup sign-in.');
 } finally {
   await browser?.close(); await Promise.all([new Promise(resolve => server.close(resolve)), new Promise(resolve => api.close(resolve))]);
 }

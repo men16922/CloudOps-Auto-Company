@@ -25,7 +25,7 @@ export type Assessment = { overall: 'action' | 'attention' | 'clear' | 'unknown'
     securityhub?: Count & { critical: number; high: number; off: number }; guardduty?: Count & { threats: number; off: number };
     tags?: { compliant: number; missing: number; unknown: number }; health?: Count & { events: number; unavailable: number } } };
 /** Opens a console URL in the resource's account (Identity Center shortcut link when a portal is known). */
-export type ConsoleOpener = (accountId: string, url: string) => string;
+type ConsoleOpener = (accountId: string, url: string) => string;
 
 
 /** Product defaults for the standard-metric checks (last hour, 5-minute periods). Shown in the UI next to each metric. */
@@ -36,7 +36,7 @@ export const metricThresholds: Record<MetricId, { info?: number; warning?: numbe
   msk_cpu: { warning: 80, direction: 'above', unit: 'percent' }, msk_disk: { warning: 85, critical: 95, direction: 'above', unit: 'percent' },
   lambda_errors: { info: 1, direction: 'above', unit: 'count' },
 };
-export const metricSource: Record<MetricId, Service> = { ec2_cpu: 'ec2', ec2_status: 'ec2', rds_cpu: 'rds', rds_storage: 'rds', cache_cpu: 'elasticache', cache_memory: 'elasticache', msk_cpu: 'msk', msk_disk: 'msk', lambda_errors: 'lambda' };
+const metricSource: Record<MetricId, Service> = { ec2_cpu: 'ec2', ec2_status: 'ec2', rds_cpu: 'rds', rds_storage: 'rds', cache_cpu: 'elasticache', cache_memory: 'elasticache', msk_cpu: 'msk', msk_disk: 'msk', lambda_errors: 'lambda' };
 
 /** Read-only console deep links. Host and path are fixed; names only appear URL-encoded. */
 export const consoleLink = {
@@ -71,19 +71,6 @@ export function serviceData(units: Partial<Record<Service, InventoryUnit[]>>, ke
     if (!selected.length) continue;
     result[service] = { units: selected, items: selected.flatMap(unit => unit.items.map(item => ({ ...item, accountId: unit.accountId, region: unit.region }))),
       partial: selected.some(unit => unit.hasMore), failed: selected.filter(unit => unit.code && !serviceStateCodes.has(unit.code)), disabled: selected.filter(unit => unit.code && serviceStateCodes.has(unit.code)) };
-  }
-  return result;
-}
-
-/** Reads of the connection's own account/region (a single read, or a cache written before the multi-account inventory)
- * are shown where the inventory has no unit for that place. */
-export function withDirectReads(units: Partial<Record<Service, InventoryUnit[]>>, pages: Partial<Record<Service, ConnectionPage>>): Partial<Record<Service, InventoryUnit[]>> {
-  const result = { ...units };
-  for (const page of Object.values(pages)) {
-    if (!page) continue;
-    const list = result[page.operation] ?? [];
-    if (list.some(unit => unit.accountId === page.accountId && unit.region === page.region)) continue;
-    result[page.operation] = [...list, { accountId: page.accountId, region: page.region, service: page.operation, collectedAt: page.collectedAt, hasMore: page.hasMore, items: page.items, source: 'direct' }];
   }
   return result;
 }

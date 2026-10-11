@@ -4,7 +4,7 @@ import { assessOperations, serviceData, type Service } from '../../../../package
 
 const findingLimit = 1500, day = 86_400_000;
 /** Retention: every snapshot of the last 48 hours (at most 24), then the last one per UTC day, for 35 days and within a byte budget. */
-export const reportRetention = { recentHours: 48, recent: 24, days: 35, bytes: 6_000_000 };
+const reportRetention = { recentHours: 48, recent: 24, days: 35, bytes: 6_000_000 };
 
 /** Assessment of one finished sync from exactly that job's units, with the same rules the dashboard uses. */
 export function reportSnapshot(job: SyncJob, units: InventoryUnit[], requiredTags: readonly string[] = []): ReportSnapshot {

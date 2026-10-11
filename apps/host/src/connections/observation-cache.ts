@@ -3,9 +3,9 @@ import { chmod, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/
 import { join } from 'node:path';
 
 /** Last read results for one user's connection. Values are re-validated against the current binding before use. */
-export type CachedObservations = { savedAt: string; directory?: unknown; inventories: Record<string, unknown> };
+type CachedObservations = { savedAt: string; directory?: unknown; inventories: Record<string, unknown> };
 /** One cached sync unit (one service in one account/region) with the job that produced it. */
-export type CachedUnit = { jobId: string; key: string; unit: unknown };
+type CachedUnit = { jobId: string; key: string; unit: unknown };
 export interface ObservationCache {
   load(scope: readonly string[]): Promise<CachedObservations | undefined>;
   save(scope: readonly string[], kind: 'directory' | `inventory:${string}`, value: unknown, savedAt: string): Promise<void>;
@@ -17,8 +17,6 @@ export interface ObservationCache {
   pruneUnits(scope: readonly string[], keep: ReadonlySet<string>): Promise<void>;
   loadReport(scope: readonly string[]): Promise<unknown[]>;
   saveReport(scope: readonly string[], snapshots: unknown[]): Promise<void>;
-  loadAlerts(scope: readonly string[]): Promise<unknown>;
-  saveAlerts(scope: readonly string[], state: unknown): Promise<void>;
 }
 
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -85,11 +83,6 @@ export class FileObservationCache implements ObservationCache {
   }
   saveReport(scope: readonly string[], snapshots: unknown[]) {
     return this.serial(async () => { await this.directory(this.root); await this.directory(this.units(scope)); await this.atomic(join(this.units(scope), 'report.json'), snapshots, 8_000_000); });
-  }
-  /** E-mail alert state (finding ids already alerted and recent delivery outcomes; no addresses). */
-  async loadAlerts(scope: readonly string[]) { return this.json(join(this.units(scope), 'alerts.json')); }
-  saveAlerts(scope: readonly string[], state: unknown) {
-    return this.serial(async () => { await this.directory(this.root); await this.directory(this.units(scope)); await this.atomic(join(this.units(scope), 'alerts.json'), state, 2_000_000); });
   }
   /** After a complete sync, units for keys the sync no longer produced (e.g. a region that lost its tagged VPC) are removed. */
   pruneUnits(scope: readonly string[], keep: ReadonlySet<string>) {

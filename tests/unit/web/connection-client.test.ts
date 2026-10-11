@@ -97,22 +97,21 @@ test('directory web results must match the configured parent and clear on auth/c
   await client.signOut(); assert.equal(client.getSnapshot().directory, undefined);
 });
 
-test('selecting a connected payer shows cached observations and inventory before the automatic sync can start', async t => {
+test('selecting a connected payer shows the cached multi-account inventory before the automatic sync can start', async t => {
   const calls: string[] = [], savedAt = '2026-10-10T00:00:00Z';
   const cached = { connectionId: row.id, accountId: row.accountId, region: row.region, operation: 'lambda', collectedAt: savedAt, items: [{ name: 'synthetic-function', runtime: 'python3.12' }], hasMore: false };
   const { identity, client } = fixture(async url => {
     const path = String(url); calls.push(path.split('/').at(-1)!);
-    return json(path.endsWith('/status') ? status : path.endsWith('/report') ? { snapshots: [] } : path.endsWith('/views') ? { items: [] } : path.endsWith('/alerts') ? { configured: false, recipients: [], history: [] } : path.endsWith('/observations') ? { savedAt, inventories: { lambda: cached } } : path.endsWith('/inventory/all') ? { service: 'all', units: [{ accountId: row.accountId, region: row.region, service: 'lambda', collectedAt: savedAt, hasMore: false, items: [{ name: 'synthetic-function' }], source: 'direct' }], truncated: false } : { items: [row], configurations: [config] });
+    return json(path.endsWith('/status') ? status : path.endsWith('/report') ? { snapshots: [] } : path.endsWith('/views') ? { items: [] } : path.endsWith('/observations') ? { savedAt, inventories: { lambda: cached } } : path.endsWith('/inventory/all') ? { service: 'all', units: [{ accountId: row.accountId, region: row.region, service: 'lambda', collectedAt: savedAt, hasMore: false, items: [{ name: 'synthetic-function' }], source: 'direct' }], truncated: false } : { items: [row], configurations: [config] });
   });
   t.after(() => client.close()); identity.emit('user-a'); await nextTurn();
   // The view starts refreshAll as soon as it sees a connected status; by then the cache must already be shown.
   let atConnected: unknown;
-  const stop = client.subscribe(() => { const value = client.getSnapshot(); if (value.status?.status === 'connected' && atConnected === undefined) atConnected = value.inventories.lambda?.items[0]?.name ?? null; });
+  const stop = client.subscribe(() => { const value = client.getSnapshot(); if (value.status?.status === 'connected' && atConnected === undefined) atConnected = value.units.lambda?.[0]?.items[0]?.name ?? null; });
   t.after(stop); calls.length = 0; await client.select(row.id);
-  assert.deepEqual(calls, ['observations', 'all', 'report', 'views', 'alerts', 'status'], 'report history, saved views and alert status come from the host, never a worker');
-  assert.deepEqual(client.getSnapshot().alerts, { configured: false, recipients: [], history: [] });
+  assert.deepEqual(calls, ['observations', 'all', 'report', 'views', 'status'], 'report history and saved views come from the host, never a worker');
   assert.deepEqual([client.getSnapshot().report, client.getSnapshot().views], [[], []]);
-  assert.equal(atConnected, 'synthetic-function'); assert.equal(client.getSnapshot().observedFrom, 'cache');
+  assert.equal(atConnected, 'synthetic-function');
   assert.deepEqual(client.getSnapshot().units.lambda?.map(unit => unit.items[0]?.name), ['synthetic-function'], 'the cached multi-account inventory is loaded before the session status');
 });
 
@@ -122,13 +121,13 @@ test('an action without a running worker asks for a new AWS sign-in instead of r
   const { identity, client } = fixture(async (url, request) => {
     const path = String(url);
     if (request?.method === 'POST') { writes.push(JSON.parse(String(request.body))); return json({ code: 'worker_unavailable' }, 503); }
-    return path.endsWith('/status') ? json({ code: 'worker_unavailable' }, 503) : json(path.endsWith('/report') ? { snapshots: [] } : path.endsWith('/views') ? { items: [] } : path.endsWith('/alerts') ? { configured: false, recipients: [], history: [] } : path.endsWith('/observations') ? { savedAt, inventories: { lambda: cached } } : path.endsWith('/inventory/all') ? { service: 'all', units: [], truncated: false } : { items: [row], configurations: [config] });
+    return path.endsWith('/status') ? json({ code: 'worker_unavailable' }, 503) : json(path.endsWith('/report') ? { snapshots: [] } : path.endsWith('/views') ? { items: [] } : path.endsWith('/observations') ? { savedAt, inventories: { lambda: cached } } : path.endsWith('/inventory/all') ? { service: 'all', units: [{ accountId: row.accountId, region: row.region, service: 'lambda', collectedAt: savedAt, hasMore: false, items: [{ name: 'synthetic-function' }], source: 'direct' }], truncated: false } : { items: [row], configurations: [config] });
   });
   t.after(() => client.close()); identity.emit('user-a'); await nextTurn(); await client.select(row.id);
   assert.equal(client.getSnapshot().status, undefined, 'no worker after a host restart is the ordinary signed-out state');
   await client.perform({ operation: 'verify' });
   assert.deepEqual([client.getSnapshot().error, client.getSnapshot().retryable], ['aws_session_required', false]);
-  assert.equal(client.getSnapshot().inventories.lambda?.items[0]?.name, 'synthetic-function', 'saved results stay visible');
+  assert.equal(client.getSnapshot().units.lambda?.[0]?.items[0]?.name, 'synthetic-function', 'saved results stay visible');
   await client.retry(); assert.equal(writes.length, 1, 'the unknown request is not replayed');
   await client.perform({ operation: 'login' });
   assert.deepEqual([client.getSnapshot().error, client.getSnapshot().retryable], ['worker_unavailable', false], 'a worker that cannot start is reported, not replayed');
@@ -141,7 +140,7 @@ test('a cached running sync is checked once with the host after the AWS session 
     const { identity, client } = fixture(async url => {
       const path = String(url), last = path.split('/').at(-1)!; calls.push(last);
       if (last === 'status') return connected ? json(status) : json({ code: 'worker_unavailable' }, 503);
-      return json(last === 'sync' ? summary(true, 12) : last === 'observations' ? { inventories: {}, sync: summary(false, 5) } : last === 'report' ? { snapshots: [] } : last === 'views' ? { items: [] } : last === 'alerts' ? { configured: false, recipients: [], history: [] } : last === 'all' ? { service: 'all', units: [], truncated: false } : { items: [row], configurations: [config] });
+      return json(last === 'sync' ? summary(true, 12) : last === 'observations' ? { inventories: {}, sync: summary(false, 5) } : last === 'report' ? { snapshots: [] } : last === 'views' ? { items: [] } : last === 'all' ? { service: 'all', units: [], truncated: false } : { items: [row], configurations: [config] });
     });
     t.after(() => client.close()); identity.emit('user-a'); await nextTurn(); await client.select(row.id);
     if (connected) {
