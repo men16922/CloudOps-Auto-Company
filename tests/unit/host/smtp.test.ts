@@ -12,7 +12,7 @@ const code = (expected: string) => (error: unknown) => error instanceof SmtpErro
 const decodeWords = (value: string) => value.split(/\r\n /).map(word => /^=\?UTF-8\?B\?(.*)\?=$/.exec(word)).map(match => Buffer.from(match![1]!, 'base64').toString('utf8')).join('');
 
 /** In-memory SMTP peer on loopback (tests only; the real client always uses TLS to the configured relay). */
-async function smtpServer(options: { auth?: string; rejectPassword?: boolean; starttls?: boolean } = {}) {
+async function smtpServer(options: { auth?: string; rejectPassword?: boolean; appPassword?: boolean; starttls?: boolean } = {}) {
   const log: string[] = []; let data = '';
   const server = createServer((socket: Socket) => {
     let buffer = '', inData = false;
@@ -26,7 +26,7 @@ async function smtpServer(options: { auth?: string; rejectPassword?: boolean; st
         log.push(line.startsWith('AUTH PLAIN ') ? 'AUTH PLAIN <redacted>' : line);
         if (/^EHLO /.test(line)) socket.write(`250-synthetic\r\n${options.starttls ? '250-STARTTLS\r\n' : ''}250 AUTH ${options.auth ?? 'LOGIN PLAIN'}\r\n`);
         else if (line === 'STARTTLS') socket.write('220 go ahead\r\n');
-        else if (line.startsWith('AUTH PLAIN ')) socket.write(options.rejectPassword ? '535 bad credentials\r\n' : '235 ok\r\n');
+        else if (line.startsWith('AUTH PLAIN ')) socket.write(options.appPassword ? '534-5.7.9 Application-specific password required\r\n534 5.7.9 See help\r\n' : options.rejectPassword ? '535 bad credentials\r\n' : '235 ok\r\n');
         else if (line === 'AUTH LOGIN') socket.write('334 VXNlcm5hbWU6\r\n');
         else if (log.at(-2) === 'AUTH LOGIN') socket.write('334 UGFzc3dvcmQ6\r\n');
         else if (log.at(-3) === 'AUTH LOGIN') socket.write(options.rejectPassword ? '535 bad credentials\r\n' : '235 ok\r\n');
@@ -63,6 +63,8 @@ test('AUTH LOGIN fallback, STARTTLS upgrade and fixed failure codes', async t =>
   await assert.rejects(sendMail({ ...config, security: 'starttls' }, message, { connect: plainOnly.open, readPassword: async () => 'x' }), code('smtp_tls_failed'), 'STARTTLS is required, never plaintext AUTH');
   const rejecting = await smtpServer({ rejectPassword: true }); t.after(rejecting.close);
   await assert.rejects(sendMail(config, message, { connect: rejecting.open, readPassword: async () => 'wrong' }), code('smtp_auth_failed'));
+  const appOnly = await smtpServer({ appPassword: true }); t.after(appOnly.close);
+  await assert.rejects(sendMail(config, message, { connect: appOnly.open, readPassword: async () => 'account-password' }), code('smtp_app_password_required'));
   await assert.rejects(sendMail(config, { ...message, to: ['ops@example.invalid>\r\nRCPT TO:<x@example.invalid'] }, { connect: rejecting.open, readPassword: async () => 'x' }), code('smtp_rejected'));
 });
 

@@ -19,7 +19,8 @@ export default function AlertPanel({ status, onTest, onRefresh }: Props) {
   const codes: Record<string, string> = {
     smtp_credentials_missing: t('메일 서버 비밀번호 파일이 없거나 권한이 넓습니다(0600 필요).', 'The mail password file is missing or too permissive (0600 required).'),
     smtp_connect_failed: t('메일 서버에 연결하지 못했습니다.', 'Could not connect to the mail server.'), smtp_tls_failed: t('메일 서버와 TLS 연결을 맺지 못했습니다.', 'TLS with the mail server failed.'),
-    smtp_auth_failed: t('메일 서버 로그인에 실패했습니다. 사용자 이름과 앱 비밀번호를 확인하세요.', 'Mail server sign-in failed. Check the user name and app password.'),
+    smtp_auth_failed: t('메일 서버가 사용자 이름이나 비밀번호를 거부했습니다. Gmail이면 앱 비밀번호(공백 없이 16자)를 다시 저장하세요.', 'The mail server rejected the user name or password. For Gmail, save the app password again (16 characters, no spaces).'),
+    smtp_app_password_required: t('메일 서버가 앱 비밀번호를 요구합니다. Gmail은 2단계 인증을 켠 뒤 만든 앱 비밀번호를 저장해야 합니다.', 'The mail server requires an app password. For Gmail, turn on 2-step verification and save an app password.'),
     smtp_rejected: t('메일 서버가 메시지를 거절했습니다.', 'The mail server rejected the message.'), smtp_timeout: t('메일 서버 응답 시간이 초과됐습니다.', 'The mail server timed out.'),
     alert_rate_limited: t('테스트 메일은 1분에 한 번 보낼 수 있습니다.', 'A test message can be sent once a minute.'),
     alerts_not_configured: t('이 Payer에는 이메일 알림이 설정되지 않았습니다.', 'E-mail alerts are not configured for this payer.'),
@@ -42,7 +43,7 @@ export default function AlertPanel({ status, onTest, onRefresh }: Props) {
           { label: t('보내는 항목', 'Sends'), value: `${status.minSeverity === 'critical' ? t('새 조치 항목', 'New action items') : t('새 조치·주의 항목', 'New action and attention items')} · ${status.detail === 'summary' ? t('종류별 개수만', 'counts per kind only') : t('자원·계정·리전 포함', 'with resource, account and region')}` },
           { label: t('최근 발송', 'Last delivery'), value: last ? <SpaceBetween size="xxxs"><span>{new Date(last.at).toLocaleString(locale)} · {kind(last)}</span>{outcome(last)}</SpaceBetween> : t('아직 없음 — 첫 동기화가 끝나면 현재 항목으로 알림을 시작합니다.', 'None yet — the first finished sync starts alerts with the current items.') },
         ]} />
-        {result ? <Alert type={result.ok ? 'success' : 'error'} dismissible onDismiss={() => setResult(undefined)}>{result.ok ? t('테스트 메일을 보냈습니다. 받은편지함(또는 스팸함)을 확인하세요.', 'The test message was sent. Check the inbox (or spam folder).') : reason(result.code)}</Alert> : null}
+        {result && (result.ok || result.code !== last?.code) ? <Alert type={result.ok ? 'success' : 'error'} dismissible onDismiss={() => setResult(undefined)}>{result.ok ? t('테스트 메일을 보냈습니다. 받은편지함(또는 스팸함)을 확인하세요.', 'The test message was sent. Check the inbox (or spam folder).') : reason(result.code)}</Alert> : null}
         {status.history.length > 1 ? <Box color="text-body-secondary" fontSize="body-s">{status.history.slice(1, 6).map(event => <div key={`${event.at}-${event.kind}`}>{`${new Date(event.at).toLocaleString(locale)} · ${kind(event)} · ${event.outcome === 'sent' ? t('보냄', 'sent') : event.outcome === 'deferred' ? t('대기', 'deferred') : reason(event.code)}`}</div>)}</Box> : null}
       </SpaceBetween>}
   </Container>;

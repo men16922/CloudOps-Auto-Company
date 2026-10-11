@@ -17,7 +17,7 @@ export const smtpConfigSchema = z.object({
 }).strict();
 export type SmtpConfig = z.infer<typeof smtpConfigSchema>;
 export type MailMessage = { from: string; fromName: string; to: string[]; subject: string; text: string; html: string };
-export type SmtpFailure = 'smtp_credentials_missing' | 'smtp_connect_failed' | 'smtp_tls_failed' | 'smtp_auth_failed' | 'smtp_rejected' | 'smtp_timeout';
+export type SmtpFailure = 'smtp_credentials_missing' | 'smtp_connect_failed' | 'smtp_tls_failed' | 'smtp_auth_failed' | 'smtp_app_password_required' | 'smtp_rejected' | 'smtp_timeout';
 /** Carries only a fixed code: server replies, addresses and credentials never reach logs or the browser. */
 export class SmtpError extends Error {
   readonly code: SmtpFailure;
@@ -125,9 +125,14 @@ export async function sendMail(input: SmtpConfig, message: MailMessage, options:
       hello = await command(`EHLO ${name}`, [250], 'smtp_rejected');
     }
     const methods = hello.lines.find(line => /^AUTH[ =]/i.test(line))?.toUpperCase().split(/[ =]+/).slice(1) ?? [];
-    if (methods.includes('PLAIN')) await command(`AUTH PLAIN ${base64(`\0${config.username}\0${password}`)}`, [235], 'smtp_auth_failed');
+    // 534 means the provider wants an application-specific password (e.g. Gmail with 2-step verification); 535 is wrong credentials.
+    const credentials = async (line: string) => {
+      socket.write(`${line}\r\n`); const reply = await bounded(reader.next());
+      if (reply.code !== 235) throw new SmtpError(reply.code === 534 ? 'smtp_app_password_required' : 'smtp_auth_failed');
+    };
+    if (methods.includes('PLAIN')) await credentials(`AUTH PLAIN ${base64(`\0${config.username}\0${password}`)}`);
     else if (methods.includes('LOGIN')) {
-      await command('AUTH LOGIN', [334], 'smtp_auth_failed'); await command(base64(config.username), [334], 'smtp_auth_failed'); await command(base64(password), [235], 'smtp_auth_failed');
+      await command('AUTH LOGIN', [334], 'smtp_auth_failed'); await command(base64(config.username), [334], 'smtp_auth_failed'); await credentials(base64(password));
     } else throw new SmtpError('smtp_auth_failed');
     await command(`MAIL FROM:<${message.from}>`, [250], 'smtp_rejected');
     for (const to of message.to) await command(`RCPT TO:<${to}>`, [250, 251], 'smtp_rejected');
