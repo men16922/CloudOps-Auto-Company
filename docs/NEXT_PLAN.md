@@ -14,3 +14,5 @@
 로컬 기록: 사용자 승인으로 로컬 commit만 한다. push·remote 생성은 별도 요청 시에만 한다.
 
 GCP 해커톤/Android 개발은 ai-builder-cup, 개인 AWS/On-Prem 및 원본 이력은 CloudOps-Automation에서 관리한다. 이 저장소의 회사 설정·데이터를 두 저장소에 자동 동기화하지 않는다.
+
+회사용 저장소: 이 저장소를 회사에 주지 않는다. 소유자가 [추출 가이드](company-porting.md#직접-떼어-내기-가이드)로 필요한 부분만 직접 떼어 별도 저장소를 만든다(2026-10-11 사용자 결정). `scripts/ops/slice-closure.mjs`로 의존 범위를 계산한다.
