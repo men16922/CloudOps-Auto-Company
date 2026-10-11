@@ -1,6 +1,6 @@
 # 회사 웹 인증과 AWS Device Code
 
-갱신: 2026-10-10. 이 문서는 분리한 조직 AWS 코드의 경계와 남은 회사 구성을 설명한다. 실제 회사 IdP·Identity Center·물리 worker는 아직 검증하지 않았다.
+갱신: 2026-10-11. 이 문서는 조직 AWS 코드의 인증·격리 경계와 남은 회사 구성을 설명한다. 개인 테스트 Identity Center로 SAML 웹 로그인·Device Code·다계정 동기화를, 로컬 Docker로 사용자별 worker 격리를 확인했다. 회사 IdP·회사 Identity Center·운영 배포는 아직 검증하지 않았다.
 
 ## 두 인증의 역할
 

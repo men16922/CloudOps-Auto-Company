@@ -1,6 +1,6 @@
 # 회사 웹 로그인과 AWS 연결
 
-회사 전용 웹은 `apps/web/src/company-main.tsx`에서 시작한다. 실제 회사 인증 adapter는 미설정이며 Firebase 구현이나 개인 CLI fallback이 없다.
+회사 전용 웹은 `apps/web/src/company-main.tsx`에서 시작한다. 웹 로그인은 IAM Identity Center SAML bridge(선택된 방식) 또는 표준 OIDC로 붙인다. 개인 테스트 Identity Center로 SAML 로그인을 실제로 확인했고, 회사 IdP는 아직 연결하지 않았다. 개인 CLI fallback은 없다.
 
 ## 화면 연결
 

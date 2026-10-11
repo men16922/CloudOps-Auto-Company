@@ -1,6 +1,6 @@
 # 테스트용 IAM Identity Center 셋업
 
-2026-10-10. 회사 환경 없이 Device Code 실로그인(NEXT_PLAN 2·4의 1·5번)을 확인할 때 사용하는 개인/테스트 계정 절차다. **아직 실행하지 않았다.** Organizations와 Identity Center 활성화는 계정 전역 설정 변경이라 계정 소유자가 직접 하거나 명시적으로 승인해야 한다. 실제 start URL·계정 ID·사용자 정보는 Git과 보고서에 넣지 않는다.
+2026-10-10. 회사 환경 없이 Device Code 실로그인(NEXT_PLAN 2·4의 1·5번)을 확인할 때 사용하는 개인/테스트 계정 절차다. 2026-10-10 개인 테스트 계정에서 실행해 SAML 웹 로그인과 Device Code 로그인을 확인했다([기록](../docs/history/verification.md)). Organizations와 Identity Center 활성화는 계정 전역 설정 변경이라 계정 소유자가 직접 하거나 명시적으로 승인해야 한다. 실제 start URL·계정 ID·사용자 정보는 Git과 보고서에 넣지 않는다.
 
 ## 사전 확인 (읽기 전용)
 

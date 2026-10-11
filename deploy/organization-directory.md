@@ -1,6 +1,6 @@
 # 조직 Root/OU 계정 상태 수집
 
-갱신: 2026-10-10. CLI worker·조직 API·한/영 화면의 로컬 합성 통합을 구현했다. 실제 AWS Organizations/회사 SSO·물리 worker 배포는 검증하지 않았다.
+갱신: 2026-10-11. CLI worker·조직 API·한/영 화면의 Root/OU 탐색을 구현했다. 개인 테스트 조직(Organizations 관리 계정)에서 동기화의 계정 확인을 실제로 확인했고, 회사 조직·회사 SSO·운영 배포는 검증하지 않았다.
 
 ## 설정과 사용
 
