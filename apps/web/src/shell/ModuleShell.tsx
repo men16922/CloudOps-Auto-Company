@@ -7,7 +7,7 @@ import SideNavigation, { type SideNavigationProps } from '@cloudscape-design/com
 import SpaceBetween from '@cloudscape-design/components/space-between';
 import ConsoleHeader from './ConsoleHeader';
 import { useLanguage } from '../i18n';
-import type { Edition } from './module-contract';
+type Edition = 'personal' | 'organization';
 
 /** Optional module-specific navigation (e.g. dashboard sections). Without it the shell keeps its overview link. */
 export type ModuleNavigation = { items: SideNavigationProps.Item[]; activeHref: string; current?: { text: string; href: string } };

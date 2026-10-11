@@ -5,7 +5,6 @@ import type { WebIdentityClient } from './web-identity';
 /** Resolves null when this build has no client for the configured identity method (stays unconfigured). */
 export type WebIdentityFactory = (configuration: Extract<WebConfiguration, { configured: true }>['identity']) => Promise<WebIdentityClient | null>;
 const FactoryContext = createContext<WebIdentityFactory | undefined>(undefined);
-export const useWebIdentityFactory = () => useContext(FactoryContext);
 export function WebIdentityFactoryProvider({ factory, children }: { factory: WebIdentityFactory; children: ReactNode }) {
   return <FactoryContext.Provider value={factory}>{children}</FactoryContext.Provider>;
 }

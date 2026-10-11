@@ -23,4 +23,3 @@ export type SyncJob = z.infer<typeof syncJobSchema>;
 export type SyncSummary = z.infer<typeof syncSummarySchema>;
 /** Unit codes that describe the service's state in that account/region rather than a failed read. */
 export const serviceStateCodes: ReadonlySet<string> = new Set(['read_not_enabled', 'read_not_subscribed']);
-export const inUse = (value: z.infer<typeof accountRegionSchema>) => value.taggedVpcs > 0;

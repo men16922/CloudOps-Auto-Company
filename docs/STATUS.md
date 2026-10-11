@@ -4,6 +4,8 @@
 
 조직 AWS 웹/API/private CLI worker, 공통 계약·신원/저장 port와 관련 테스트를 이전했다. 독립 main Git 저장소이며 사용자 승인으로 초기 로컬 commit을 만들었다(remote·push 없음). 원본 CloudOps-Automation과 ai-builder-cup은 별도로 보존한다.
 
+구조: `apps/web`(화면)·`apps/host`(API·연결·worker 관리·알림)·`apps/worker`(Docker 수집기)와 공유 `packages/`(contracts·assessment·worker-protocol). 빌드별 허용 폴더를 검사한다. [레포 구조](architecture/overview.md).
+
 구현과 근거:
 - 대시보드: 상단 바 조직 프로필(Payer·Device Code·세션), 다계정·다리전 **동기화**. 동기화는 사용자 전용 worker가 Organizations 범위의 계정을 STS로 확인하고 태그된 VPC가 있는 리전만 읽어 디스크 캐시에 저장한다. 직접 조회 모드와 AWS Config 집계자 모드가 있다. 모든 표에 계정·리전 열·범위 필터·검색 조건·CSV 내보내기가 있다. 메뉴는 운영 리포트(동기화별 판정 기록으로 추이·신규/해결·EOS 일정, Markdown/HTML 내보내기)·EC2·EKS·RDS·ElastiCache·MSK·Serverless(Lambda·DynamoDB·API Gateway 탭)·경보·표준 지표·Systems Manager(관리 노드·패치·Automation 기록)·수명주기(EOS)·거버넌스(보안 태세: Security Hub·GuardDuty와 적용 범위, 태그 준수, AWS Health)·조직 계정(계정별 사용 리전)이다. 범위 필터 옆 '저장된 보기'로 페이지·범위·검색 조건을 서버 측 사용자 설정에 저장한다. [계획](plans/2026-10-11-enterprise-operations.md)
 - 웹 인증: 사용자 결정으로 별도 IdP 없이 **Identity Center SAML 2.0 앱**으로 통일했다. 서버 SAML bridge(`@node-saml/node-saml` 5.1.0, xml-crypto 6.3.3)가 assertion을 검증하고, 기존 popup PKCE client와 ES256 verifier를 재사용한다. 합성 SAML IdP로 단위 테스트와 Chromium e2e를 통과했다. OIDC 경로는 후보로 남긴다.

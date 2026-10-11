@@ -1,5 +1,13 @@
 # Progress log
 
+## 2026-10-11 — 레포 구조 정리 (apps/packages)
+- 사용자 요청: 구조를 명시적으로 이해되게 정리. 결정: apps/packages 구조, 정리 전 로컬 commit.
+- `apps/web`(화면), `apps/host`(API·로그인·저장소·연결·worker 관리·알림), `apps/worker`(Docker 수집기), `packages/contracts`·`packages/assessment`·`packages/worker-protocol`(공유). 테스트는 `tests/unit/{web,assessment,host,worker}`·`tests/contract`·`tests/browser`·`tests/opt-in`, 빌드 스크립트는 `scripts/build`. `git mv`로 이력을 보존하고 상대 import를 기계적으로 다시 계산했다.
+- 함께 쓰던 파일을 층별로 나눴다: worker 명령 형식·lease 식별자·제한된 서브프로세스는 `packages/worker-protocol`, worker의 pipe 서버는 `apps/worker/src/serve.ts`, 브라우저 다운로드는 `apps/web/src/dashboard/download.ts`.
+- 빌드마다 포함 가능한 폴더(`artifactSources`)를 검사해 화면이 호스트 코드를, worker가 호스트 코드를 넣으면 빌드가 실패한다(일부러 어겨 실패를 확인). tsconfig는 폴더 단위 include. worker Dockerfile은 worker와 공유 패키지만 복사하며 새 레시피로 이미지 빌드를 확인했다(확인용 태그는 삭제, 실행 중 설정의 이미지는 그대로).
+- 문서: `docs/architecture/overview.md`(레포 지도) 신설, `Identity.md`→`docs/architecture/identity.md`, 분리 출처→`docs/provenance`, 지난 검증 기록→`docs/history`, 끝난 계획→`docs/plans/archive`. README·AGENTS·deploy 문서 경로 갱신, 모든 상대 링크 확인.
+- 멀티 클라우드 시절의 쓰지 않는 계약(계획/실행/검토 타입, gcp·azure 대상, 모듈 manifest)을 제거했다. 동작은 바꾸지 않았다. 219/219, 회사 smoke·조직 웹 합성 검증 통과.
+
 ## 2026-10-11 — 이메일 알림과 호스트 측 결과 수집
 - 사용자 결정: Slack 없이 이메일만, 수신자는 로컬 서버 설정에만 둔다(AGENTS.md에 기록). 호스트의 SMTP 클라이언트(의존성 추가 없음)가 항상 TLS로 보내고, 비밀번호는 0600 파일에서 보낼 때 읽는다.
 - 동기화가 끝나 판정이 기록되면 첫 번째는 '알림 시작'(현재 조치·주의), 이후는 알리지 않은 항목만 보낸다. 볼 수 없었던 위치에서 사라진 항목은 해제하지 않고, 실패·대기 항목은 다음 동기화에 다시 보낸다. 운영 리포트 화면에 가린 수신자·최근 결과·고정 문구 테스트 메일(1분 1회)을 둔다. `check-deployment`가 비밀번호 파일 유무·권한을 보여 준다.
