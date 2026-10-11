@@ -16,3 +16,5 @@
 GCP 해커톤/Android 개발은 ai-builder-cup, 개인 AWS/On-Prem 및 원본 이력은 CloudOps-Automation에서 관리한다. 이 저장소의 회사 설정·데이터를 두 저장소에 자동 동기화하지 않는다.
 
 회사용 저장소: 이 저장소를 회사에 주지 않는다. 소유자가 [추출 가이드](company-porting.md#직접-떼어-내기-가이드)로 필요한 부분만 직접 떼어 별도 저장소를 만든다(2026-10-11 사용자 결정). `scripts/ops/slice-closure.mjs`로 의존 범위를 계산한다.
+
+미착수 후보(FEEDBACK 권고): 대시보드를 '전체 자산'이 아니라 '설정된 수집 범위의 현황'으로 표시하고 제외된 리전도 보여 주기(`OperationsDashboard.tsx`의 사용 리전·확인한 리전 표시 주변). 목표(`/goal`)는 2026-10-11 사용자가 종료했다.

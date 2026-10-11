@@ -1,6 +1,6 @@
 # 현재 상태
 
-갱신: 2026-10-11. 조직 AWS 계정 운영용 독립 로컬 저장소다(main, 로컬 commit만, remote·push 없음). 원본 CloudOps-Automation과 ai-builder-cup은 별도로 보존한다.
+갱신: 2026-10-11. 조직 AWS 계정 운영용 독립 로컬 저장소다(main, 공개 GitHub 저장소 men16922/CloudOps-Auto-Company에 푸시됨. 회사에는 이 저장소를 넘기지 않고 소유자가 추출 가이드로 별도 저장소를 만든다). 원본 CloudOps-Automation과 ai-builder-cup은 별도로 보존한다.
 
 구조: `apps/web`(화면)·`apps/host`(API·연결·worker 관리·리포트 기록)·`apps/worker`(Docker 수집기)와 공유 `packages/`(contracts·assessment·worker-protocol). 빌드별 허용 폴더를 검사한다. [레포 구조](architecture/overview.md)
 
