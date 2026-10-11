@@ -113,5 +113,6 @@ inspect는 등록된 서비스(`alarms`·`metrics`·`ec2`·`eks`·`rds`·`elasti
 - **설정:** 연결 항목에 `"runbooks": { "roleName": "<런북 전용 permission set>", "allowed": ["connectivity-check", "ec2-start", "ec2-restart", "ec2-stop"] }`. 카탈로그는 코드에 고정(`packages/contracts/aws/runbooks.ts`)이며 문서 이름·파라미터를 요청에서 받지 않는다. 승인 정책은 `"runbookPolicy": { "allowSelfApproval": false }`(기본 2인). 이 값을 바꾸면 binding이 바뀌어 사용자는 연결을 새로 등록한다.
 - **권한:** 런북 permission set은 조회용과 분리한다. 카탈로그 문서의 `ssm:StartAutomationExecution`, `ssm:GetAutomationExecution`, EC2 런북이 호출하는 `ec2:Start/Stop/RebootInstances`와 조회만 허용한다. 테스트 계정은 `scripts/ops/runbook-test-setup.sh`(점검 문서 `CloudOps-ConnectivityCheck`, permission set, 할당)로 준비한다. worker는 같은 SSO 세션에 런북 프로필을 따로 두고 실행 전 조회 세션과 같은 사람인지 STS로 확인한다.
 - **흐름:** operator가 사유와 함께 요청한다. EC2 대상은 요청자 동기화 결과에 있는 인스턴스만 된다. reviewer 역할의 다른 구성원이 승인하고, 요청자가 본인 세션으로 실행한다. 호스트가 실행 상태를 5초 간격(최대 30분)으로 읽어 성공·실패를 기록한다. worker가 바쁘거나 AWS 세션이 없으면 아무것도 시작하지 않고 승인 상태로 되돌린다. 시작 응답을 잃으면 다시 보내지 않고 '실행 여부 미확인'으로 둔다.
+- **worker 이미지:** binding 형식이 strict라, 런북을 처음 켤 때는 런북 코드가 들어간 worker 이미지를 다시 빌드하고 Docker driver 설정의 `imageId`를 바꾼 뒤 호스트를 재시작한다. 예전 이미지는 새 항목을 거부해 로그인 직후 연결이 끊긴다.
 - **기록:** 요청·결재·실행 이벤트를 저장소에 남긴다(연결 설정별 최근 200건). 불변 감사 저장소는 아니다.
 
