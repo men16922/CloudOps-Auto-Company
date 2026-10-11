@@ -1,5 +1,9 @@
 # Progress log
 
+## 2026-10-11 — 새로고침·재로그인 뒤 동기화가 멈춰 보이던 문제
+- 실제 계정에서 확인: 페이지를 다시 열거나 웹 로그인을 다시 하면 화면이 디스크의 마지막 요약('동기화 중', live 아님)을 불러오고 진행률을 다시 묻지 않아, 다른 버튼을 눌러야만 이어지는 것처럼 보였다(동기화 버튼은 worker가 바쁘다고 거절).
+- AWS 연결이 확인되면 캐시의 '진행 중' 요약에 대해 호스트에 한 번 진행률을 묻는다(기존 worker만 읽고 worker 생성·로그인·동기화는 하지 않음). worker가 없으면 '이전 동기화가 끝나지 않음'으로 표시하고 다시 동기화를 안내한다. 220/220, 회사 smoke·조직 웹 합성 검증 통과.
+
 ## 2026-10-11 — 레포 구조 정리 (apps/packages)
 - 사용자 요청: 구조를 명시적으로 이해되게 정리. 결정: apps/packages 구조, 정리 전 로컬 commit.
 - `apps/web`(화면), `apps/host`(API·로그인·저장소·연결·worker 관리·알림), `apps/worker`(Docker 수집기), `packages/contracts`·`packages/assessment`·`packages/worker-protocol`(공유). 테스트는 `tests/unit/{web,assessment,host,worker}`·`tests/contract`·`tests/browser`·`tests/opt-in`, 빌드 스크립트는 `scripts/build`. `git mv`로 이력을 보존하고 상대 import를 기계적으로 다시 계산했다.

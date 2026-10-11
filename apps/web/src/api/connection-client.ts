@@ -135,6 +135,10 @@ export class OrganizationConnectionClient {
           || (status.verificationUriComplete && !checkedDeviceLink(status.verificationUriComplete, status.userCode, portal, true))) throw new RequestError('invalid_response');
       } else if (status.verificationUriComplete) throw new RequestError('invalid_response');
       this.set({ status });
+      // A cached "running" summary (page reload, sign-in again) is not live: ask the host once so progress resumes.
+      // This reads the existing worker only; it never starts a worker, login or sync.
+      const sync = this.value.sync;
+      if (status.status === 'connected' && sync && !sync.live && (sync.state === 'running' || (sync.remaining ?? 0) > 0)) await this.pollSync();
     } catch (error) {
       // No running worker yet (e.g. after a host restart) is the ordinary "sign in to AWS" state, not an error.
       if (sequence === this.statusSequence && error instanceof RequestError && error.code === 'worker_unavailable' && epoch === this.epoch) { this.set({ status: undefined }); return; }

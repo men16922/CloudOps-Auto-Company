@@ -133,3 +133,24 @@ test('an action without a running worker asks for a new AWS sign-in instead of r
   await client.perform({ operation: 'login' });
   assert.deepEqual([client.getSnapshot().error, client.getSnapshot().retryable], ['worker_unavailable', false], 'a worker that cannot start is reported, not replayed');
 });
+
+test('a cached running sync is checked once with the host after the AWS session is confirmed, never without a worker', async t => {
+  const summary = (live: boolean, done: number) => ({ connectionId: row.id, jobId: '22222222-2222-4222-8222-222222222222', mode: 'direct', state: 'running', startedAt: '2026-10-11T00:00:00.000Z', progress: { done, total: 19 }, accounts: [], cachedUnits: 0, remaining: 0, live });
+  for (const connected of [true, false]) {
+    const calls: string[] = [];
+    const { identity, client } = fixture(async url => {
+      const path = String(url), last = path.split('/').at(-1)!; calls.push(last);
+      if (last === 'status') return connected ? json(status) : json({ code: 'worker_unavailable' }, 503);
+      return json(last === 'sync' ? summary(true, 12) : last === 'observations' ? { inventories: {}, sync: summary(false, 5) } : last === 'report' ? { snapshots: [] } : last === 'views' ? { items: [] } : last === 'alerts' ? { configured: false, recipients: [], history: [] } : last === 'all' ? { service: 'all', units: [], truncated: false } : { items: [row], configurations: [config] });
+    });
+    t.after(() => client.close()); identity.emit('user-a'); await nextTurn(); await client.select(row.id);
+    if (connected) {
+      assert.deepEqual([client.getSnapshot().sync?.live, client.getSnapshot().sync?.progress.done], [true, 12], 'progress resumes without another click');
+      assert.equal(calls.filter(call => call === 'sync').length, 1);
+    } else {
+      assert.equal(calls.includes('sync'), false, 'without a worker the cached summary stays as it is');
+      assert.equal(client.getSnapshot().sync?.live, false);
+    }
+    client.close();
+  }
+});

@@ -165,15 +165,17 @@ export default function OperationsDashboard(props: Props) {
   };
 
   // Sync status, action and scope filters shared by every view.
-  const syncLabel = sync ? ({ running: t('동기화 중', 'Syncing'), completed: t('동기화 완료', 'Sync completed'), partial: t('일부 실패 포함 완료', 'Completed with failures'), failed: t('동기화 실패', 'Sync failed'),
+  // A running state read from the cache without a live job means the worker that ran it is gone (host restart, AWS session ended).
+  const interrupted = sync?.state === 'running' && !sync.live;
+  const syncLabel = interrupted ? t('이전 동기화가 끝나지 않음', 'Previous sync did not finish') : sync ? ({ running: t('동기화 중', 'Syncing'), completed: t('동기화 완료', 'Sync completed'), partial: t('일부 실패 포함 완료', 'Completed with failures'), failed: t('동기화 실패', 'Sync failed'),
     cancelled: t('동기화 취소됨', 'Sync cancelled'), expired: t('세션 만료로 중단', 'Stopped: session expired') } as const)[sync.state] : t('동기화 기록 없음', 'Never synced');
   const usedRegions = new Set((sync?.accounts ?? []).flatMap(account => account.regions.filter(region => region.taggedVpcs > 0).map(region => region.region)));
   const syncBar = <Container><SpaceBetween size="s">
     <div className="ops-sync-row">
       <SpaceBetween size="xxs">
-        <StatusIndicator type={!sync ? 'pending' : sync.state === 'running' ? 'in-progress' : sync.state === 'completed' ? 'success' : sync.state === 'partial' ? 'warning' : 'error'}>{syncLabel}</StatusIndicator>
-        <Box color="text-body-secondary" fontSize="body-s">{sync ? t(`${time(sync.finishedAt ?? sync.startedAt)} · 계정 ${sync.accounts.length} · 사용 리전 ${usedRegions.size} (VPC 태그 기준) · ${sync.mode === 'config' ? 'AWS Config 집계자' : '계정별 직접 조회'}${sync.live ? '' : ' · 캐시'}`,
-          `${time(sync.finishedAt ?? sync.startedAt)} · ${sync.accounts.length} accounts · ${usedRegions.size} regions in use (tagged VPC) · ${sync.mode === 'config' ? 'AWS Config aggregator' : 'direct per account'}${sync.live ? '' : ' · cached'}`)
+        <StatusIndicator type={!sync ? 'pending' : interrupted ? 'warning' : sync.state === 'running' ? 'in-progress' : sync.state === 'completed' ? 'success' : sync.state === 'partial' ? 'warning' : 'error'}>{syncLabel}</StatusIndicator>
+        <Box color="text-body-secondary" fontSize="body-s">{sync ? t(`${time(sync.finishedAt ?? sync.startedAt)} · 계정 ${sync.accounts.length} · 사용 리전 ${usedRegions.size} (VPC 태그 기준) · ${sync.mode === 'config' ? 'AWS Config 집계자' : '계정별 직접 조회'}${sync.live ? '' : ' · 캐시'}${interrupted ? ' · AWS 연결 후 다시 동기화하세요' : ''}`,
+          `${time(sync.finishedAt ?? sync.startedAt)} · ${sync.accounts.length} accounts · ${usedRegions.size} regions in use (tagged VPC) · ${sync.mode === 'config' ? 'AWS Config aggregator' : 'direct per account'}${sync.live ? '' : ' · cached'}${interrupted ? ' · sync again once connected' : ''}`)
           : t('동기화하면 Organizations 범위의 계정을 확인하고 VPC 태그가 있는 리전의 자원을 읽어 디스크에 저장합니다.', 'Sync checks the accounts in the Organizations scope and reads resources in regions with tagged VPCs, saving them to disk.')}</Box>
       </SpaceBetween>
       <Button variant="primary" iconName="refresh" loading={sync?.state === 'running' && sync.live} disabled={!connected || busy || sync?.state === 'running' && sync.live} onClick={onSync}>{t('동기화', 'Sync')}</Button>
