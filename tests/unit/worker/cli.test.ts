@@ -166,6 +166,9 @@ test('bounded subprocess captures safe output, suppresses errors and reaps cance
   const spec = (program: string, timeoutMs = 2000, maxBytes = 1000) => ({ executable: process.execPath, args: ['-e', program], env: {}, timeoutMs, maxBytes });
   assert.deepEqual(await boundedCliProcess(spec('process.stdout.write("ok")'), new AbortController().signal), { stdout: 'ok' });
   await assert.rejects(boundedCliProcess(spec('process.stderr.write("private-secret AccessDeniedException"); process.exit(1)'), new AbortController().signal), error => code('sso_denied')(error) && !(error as Error).message.includes('secret'));
+  await assert.rejects(boundedCliProcess(spec('process.stderr.write("private-secret ValidationException: parameters"); process.exit(254)'), new AbortController().signal), error => code('cli_invalid_request')(error) && !(error as Error).message.includes('secret'));
+  await assert.rejects(boundedCliProcess(spec('process.stderr.write("InvalidDocument: private-secret"); process.exit(254)'), new AbortController().signal), error => code('cli_not_found')(error) && !(error as Error).message.includes('secret'));
+  await assert.rejects(boundedCliProcess(spec('process.stderr.write("unrecognised private-secret failure"); process.exit(1)'), new AbortController().signal), code('cli_failed'));
   await assert.rejects(boundedCliProcess(spec('process.stdout.write("x".repeat(2000)); setInterval(()=>{},1000)'), new AbortController().signal), code('cli_output_limit'));
   await assert.rejects(boundedCliProcess(spec('setInterval(()=>{},1000)', 30), new AbortController().signal), code('cli_timeout'));
   const controller = new AbortController(); let started = false;

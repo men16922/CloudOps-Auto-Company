@@ -20,7 +20,7 @@ test('runbook CLI arguments come only from the catalog and use the separate runb
   assert.deepEqual(start.slice(0, 5), ['ssm', 'start-automation-execution', '--document-name', 'AWS-RestartEC2Instance', '--cli-input-json']);
   assert.deepEqual(JSON.parse(start[5]!), { Parameters: { InstanceId: ['i-0123456789abcdef0'] } });
   assert.equal(start[start.indexOf('--profile') + 1], `${cliProfile(binding)}-runbook`, 'never the read profile');
-  assert.deepEqual(JSON.parse(cliArguments(binding, 'automation-start', { kind: 'start', runbook: 'connectivity-check' }, target)[5]!), { Parameters: {} });
+  assert.deepEqual(JSON.parse(cliArguments(binding, 'automation-start', { kind: 'start', runbook: 'connectivity-check' }, target)[5]!), {});
   assert.throws(() => cliArguments(binding, 'automation-start', { kind: 'start', runbook: 'ec2-stop', instanceId: 'i-0123456789abcdef0' }, target), code('runbook_not_allowed'));
   assert.throws(() => cliArguments(binding, 'automation-start', { kind: 'start', runbook: 'ec2-restart' }, target), code('invalid_runbook_target'));
   assert.throws(() => cliArguments(binding, 'automation-start', { kind: 'start', runbook: 'connectivity-check', instanceId: 'i-0123456789abcdef0' }, target), code('invalid_runbook_target'));

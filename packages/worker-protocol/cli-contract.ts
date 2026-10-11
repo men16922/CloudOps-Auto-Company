@@ -255,8 +255,9 @@ function runbookArguments(binding: CliBinding, operation: 'runbook-identity' | '
   if (query.kind === 'start' && operation === 'automation-start') {
     if (!runbooks.allowed.includes(query.runbook)) throw cliFailure('runbook_not_allowed', 403);
     const entry = runbookCatalog[query.runbook];
+    // SSM rejects an empty Parameters map (ValidationException), so a runbook without parameters sends none.
     if ((entry.target === 'ec2-instance') !== Boolean(query.instanceId)) throw cliFailure('invalid_runbook_target');
-    return ['ssm', 'start-automation-execution', '--document-name', entry.document, '--cli-input-json', JSON.stringify({ Parameters: entry.target === 'ec2-instance' ? { InstanceId: [query.instanceId] } : {} }),
+    return ['ssm', 'start-automation-execution', '--document-name', entry.document, '--cli-input-json', JSON.stringify(entry.target === 'ec2-instance' ? { Parameters: { InstanceId: [query.instanceId] } } : {}),
       '--query', '{executionId:AutomationExecutionId}', ...common];
   }
   if (query.kind === 'get' && operation === 'automation-get') {

@@ -51,6 +51,8 @@ export default function RunbooksView({ state, instances, payer, accountLabel, on
     runbook_requester_required: t('요청자 본인만 실행하거나 취소할 수 있습니다.', 'Only the requester can run or cancel.'), runbook_target_not_synced: t('동기화된 인벤토리에 없는 인스턴스입니다. 동기화 후 다시 요청하세요.', 'The instance is not in your synced inventory. Sync and request again.'),
     runbook_start_unknown: t('실행이 시작됐는지 확인하지 못했습니다. AWS 콘솔에서 실행 기록을 확인한 뒤 필요하면 새로 요청하세요.', 'Whether it started is unknown. Check executions in the AWS console before requesting again.'),
     runbook_identity_mismatch: t('런북 권한 세트가 이 사용자에게 할당되지 않았거나 다른 사용자입니다.', 'The runbook permission set is not assigned to this user, or the identity differs.'),
+    cli_invalid_request: t('AWS가 런북 요청 형식을 거부했습니다. 문서·파라미터 설정을 확인하세요.', 'AWS rejected the runbook request format. Check the document and its parameters.'),
+    cli_not_found: t('런북 문서나 대상을 이 계정·리전에서 찾지 못했습니다. 설정 스크립트로 문서를 만들었는지 확인하세요.', 'The runbook document or target was not found in this account and region. Check that the setup created the document.'),
     runbook_request_not_pending: t('이미 처리된 요청입니다.', 'The request was already handled.'), runbook_request_not_approved: t('승인된 요청만 실행할 수 있습니다.', 'Only approved requests can run.'),
   };
   const message = (code: string) => codes[code] ?? (code.startsWith('aws_') || code.startsWith('cli_') || code.startsWith('read_') ? t(`AWS가 요청을 거절했습니다 (${code}).`, `AWS rejected the request (${code}).`) : t(`요청을 처리하지 못했습니다 (${code}).`, `The request could not be completed (${code}).`));

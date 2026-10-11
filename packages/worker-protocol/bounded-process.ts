@@ -34,12 +34,15 @@ export function boundedCliProcess(spec: ProcessSpec, signal: AbortSignal, output
       if (failure) reject(failure);
       else if (code === 0) resolve({ stdout });
       else {
-        const name = /\b(AccessDeniedException|ExpiredTokenException|AWSOrganizationsNotInUseException|TooManyRequestsException|AccessDenied|UnauthorizedOperation|ForbiddenException|AuthorizationError|Throttling|ThrottlingException|InvalidAccessException|SubscriptionRequiredException)\b/.exec(stderr)?.[1];
+        const name = /\b(AccessDeniedException|ExpiredTokenException|AWSOrganizationsNotInUseException|TooManyRequestsException|AccessDenied|UnauthorizedOperation|ForbiddenException|AuthorizationError|Throttling|ThrottlingException|InvalidAccessException|SubscriptionRequiredException|ValidationException|InvalidAutomationExecutionParametersException|InvalidDocument|AutomationDefinitionNotFoundException|AutomationDefinitionVersionNotFoundException|ResourceNotFoundException)\b/.exec(stderr)?.[1];
         // Service-level denials (missing IAM permission for one API) are distinct from SSO denial. Security Hub reports "not enabled"
         // as InvalidAccessException; AWS Health without a Business-level support plan as SubscriptionRequiredException.
         reject(cliFailure(name === 'AccessDeniedException' ? 'sso_denied' : name === 'ExpiredTokenException' ? 'sso_expired' : name === 'AWSOrganizationsNotInUseException' ? 'organization_not_in_use'
           : name === 'InvalidAccessException' ? 'service_not_enabled' : name === 'SubscriptionRequiredException' ? 'service_not_subscribed'
-          : name && ['TooManyRequestsException', 'Throttling', 'ThrottlingException'].includes(name) ? 'cli_throttled' : name ? 'access_denied' : 'cli_failed'));
+          : name && ['TooManyRequestsException', 'Throttling', 'ThrottlingException'].includes(name) ? 'cli_throttled'
+          : name && ['ValidationException', 'InvalidAutomationExecutionParametersException'].includes(name) ? 'cli_invalid_request'
+          : name && ['InvalidDocument', 'AutomationDefinitionNotFoundException', 'AutomationDefinitionVersionNotFoundException', 'ResourceNotFoundException'].includes(name) ? 'cli_not_found'
+          : name ? 'access_denied' : 'cli_failed'));
       }
       stdout = ''; stderr = '';
     });
