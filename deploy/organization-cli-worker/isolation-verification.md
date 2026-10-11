@@ -49,11 +49,11 @@ node dist-company-api/local.mjs serve    # 시작 로그에 worker provisioner: 
 | 8 | 생성 중 강제 종료·daemon 응답 지연 | unknown 보존, 자동 재생성 없음, 운영자 조사 필요 표시 | 로그(민감값 제외) |
 | 9 | 종료 후 `docker ps -a`·metadata root | 회수된 container 없음, metadata에 token 없음 | 목록 |
 
-실패 항목은 수정 없이 그대로 기록하고 [worker 후속 계획](../../docs/plans/2026-10-10-organization-worker-supervisor.md)에 남긴다. 이 절차의 통과는 해당 호스트·이미지·네트워크 구성에 대한 근거이며, 다른 배포 환경이나 실제 운영 승인을 대신하지 않는다.
+실패 항목은 수정 없이 그대로 기록하고 [worker 후속 계획](../../docs/plans/archive/2026-10-10-organization-worker-supervisor.md)에 남긴다. 이 절차의 통과는 해당 호스트·이미지·네트워크 구성에 대한 근거이며, 다른 배포 환경이나 실제 운영 승인을 대신하지 않는다.
 
 ## 로컬 실행 결과 (2026-10-10, Docker Desktop 28.3.3 linux-arm64)
 
-`npm run verify:worker-isolation`(`scripts/verify-worker-isolation.mjs`)이 합성 사용자 A/B, 합성 OIDC, 임시 SQLite, 실제 Docker driver로 **30/30** 통과했다(2회 연속). worker 네트워크는 `--internal`이라 container 안의 AWS CLI는 AWS에 닿지 못하며 로그인은 `failed`로 끝난다.
+`npm run verify:worker-isolation`(`tests/opt-in/verify-worker-isolation.mjs`)이 합성 사용자 A/B, 합성 OIDC, 임시 SQLite, 실제 Docker driver로 **30/30** 통과했다(2회 연속). worker 네트워크는 `--internal`이라 container 안의 AWS CLI는 AWS에 닿지 못하며 로그인은 `failed`로 끝난다.
 
 | 절차 # | 자동 검사 | 결과 |
 |---|---|---|

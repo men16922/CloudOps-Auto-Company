@@ -14,7 +14,7 @@ IAM Identity Center와 AWS Organizations는 추가 요금이 없다. 앱이 하�
 ## 절차
 
 1. Identity Center 콘솔에서 **organization instance**를 활성화한다. account instance는 permission set과 계정 접근을 지원하지 않는다. 리전은 하나만 고를 수 있고 나중에 바꾸려면 삭제 후 다시 만들어야 한다.
-2~4. 활성화 후 `bash scripts/identity-center-test-setup.sh <email> [region]`이 사용자, `CloudOpsReadOnly`(ReadOnlyAccess) permission set, 계정 할당을 멱등으로 만든다. connection 값은 Git 제외 `.data/identity-center-test.json`에 쓴다. 콘솔로 할 때는 아래 2~4를 따른다.
+2~4. 활성화 후 `bash scripts/ops/identity-center-test-setup.sh <email> [region]`이 사용자, `CloudOpsReadOnly`(ReadOnlyAccess) permission set, 계정 할당을 멱등으로 만든다. connection 값은 Git 제외 `.data/identity-center-test.json`에 쓴다. 콘솔로 할 때는 아래 2~4를 따른다.
 2. Identity Center 디렉터리에 테스트 사용자 A(필요하면 B)를 만든다. 이메일 인증을 하고 MFA를 등록한다.
 3. AWS 관리형 정책 `ReadOnlyAccess`로 permission set을 만들고, 대상 계정에 사용자와 함께 할당한다. 거버넌스 화면은 Security Hub·GuardDuty·AWS Health·Resource Groups Tagging API 조회 권한을 쓴다. 더 좁은 권한이면 해당 영역은 '권한 없음'으로 표시된다. AWS Health API는 Business 이상 지원 플랜이 필요하며, 없으면 '확인 불가'로 표시된다.
 4. 설정에서 start URL(`https://d-xxxxxxxxxx.awsapps.com/start`)과 Identity Center 리전을 확인한다. Git 밖의 배포 JSON `connections[]`에 `startUrl`, `ssoRegion`, `accountId`, `roleName: "ReadOnlyAccess"`, `region`을 넣고 `local.mjs check-deployment`로 검증한다.

@@ -6,7 +6,7 @@
 
 브라우저 → Backend → 사용자별 AWS CLI Device Code 흐름이다. 현재 Backend 구현은 TypeScript/Node이며 Flask 어댑터는 포함하지 않는다.
 
-1. **회사 웹 로그인:** `WebIdentityClient`와 서버 `WebIdentityVerifier`를 회사 인증에 맞게 주입한다. 서버는 서명·issuer/audience·만료·회수 등을 검증한 뒤 안정된 actor를 만든다. 2026-10-10 결정: 별도 IdP 없이 IAM Identity Center SAML 2.0 앱을 쓰고 서버 SAML bridge가 검증한다([웹 adapter](deploy/organization-web.md#identity-center-saml-웹-로그인-선택된-방식)). 실제 Identity Center 앱 연동은 미검증이다.
+1. **회사 웹 로그인:** `WebIdentityClient`와 서버 `WebIdentityVerifier`를 회사 인증에 맞게 주입한다. 서버는 서명·issuer/audience·만료·회수 등을 검증한 뒤 안정된 actor를 만든다. 2026-10-10 결정: 별도 IdP 없이 IAM Identity Center SAML 2.0 앱을 쓰고 서버 SAML bridge가 검증한다([웹 adapter](../../deploy/organization-web.md#identity-center-saml-웹-로그인-선택된-방식)). 실제 Identity Center 앱 연동은 미검증이다.
 2. **조직 접근:** 검증된 actor와 별도로 organization/workspace membership·역할을 검사한다. 이메일·요청 body·클라이언트 role로 권한을 만들지 않는다.
 3. **AWS 로그인:** 서버가 고정한 연결 설정으로 전용 CLI worker가 Device Code를 시작한다. 사용자는 AWS의 공식 로그인 페이지에서 회사 인증/MFA를 완료한다. AWS Device Code token을 웹 로그인 token으로 사용하지 않는다.
 4. **AWS 대상 확인:** worker가 STS 계정/역할을 확인한다. 계정·역할·리전·binding과 달라지면 조회 결과를 거부한다. 시작 URL이나 Payer 선택으로 하위 계정 권한이 부여되는 것은 아니다.
@@ -28,4 +28,4 @@ profile과 sso-session 이름뿐 아니라 실제 홈·SSO cache·임시 자격�
 
 기존 CLI가 회사에서 된다는 사실은 중요한 입력이지만 이 공유 웹 서비스의 실제 인증·격리·배포 검증을 대신하지 않는다. 이 문서는 회사의 기존 절차에 연결할 조건이며 새로운 회사 승인 체계를 정의하지 않는다.
 
-[API 구성](deploy/organization-api.md) · [웹 adapter](deploy/organization-web.md) · [private worker](deploy/organization-cli-worker/README.md) · [현재 검증](docs/verification.md)
+[API 구성](../../deploy/organization-api.md) · [웹 adapter](../../deploy/organization-web.md) · [private worker](../../deploy/organization-cli-worker/README.md) · [현재 검증](../history/verification.md)

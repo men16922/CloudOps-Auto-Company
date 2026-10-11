@@ -1,6 +1,6 @@
 # Organization AWS CLI worker
 
-This is the isolated execution artifact for [Identity.md](../../Identity.md). It is **not yet a deployed multi-user authentication service**. Web identity/membership, durable connections/leases, the supervisor, generation-bound private pipes and an optional company composition factory are implemented and tested with synthetic providers. An optional local Docker driver now has durable intents and synthetic command tests. Real browser sign-in, native Docker/container isolation and live company SSO validation remain required.
+This is the isolated execution artifact for [identity architecture](../../docs/architecture/identity.md). It is **not yet a deployed multi-user authentication service**. Web identity/membership, durable connections/leases, the supervisor, generation-bound private pipes and an optional company composition factory are implemented and tested with synthetic providers. An optional local Docker driver now has durable intents and synthetic command tests. Real browser sign-in, native Docker/container isolation and live company SSO validation remain required.
 
 For hosted execution, a trusted supervisor receives authenticated registry jobs and owns this child's private pipe. A remote browser cannot attach directly to container stdin. `createOrganizationWorkerRuntime` connects the registry, lease core, supervisor and injected provisioner; no physical driver is supplied by default. Deploying this image alone does not provide that service.
 
@@ -30,7 +30,7 @@ The Dockerfile-specific ignore file restricts the build context to the worker so
 
 | Resource | Required configuration |
 |---|---|
-| `/run/cloudops/binding.json` | Read-only trusted binding; use the schema in `server/modules/aws/organization/organization-cli-contract.ts`. No tokens or access keys |
+| `/run/cloudops/binding.json` | Read-only trusted binding; use the schema in `packages/worker-protocol/cli-contract.ts`. No tokens or access keys |
 | `/run/cloudops/lease.json` | Read-only supervisor allocation handle, matching the entire binding digest and generation; required by the standalone worker bootstrap |
 | `/home/cloudops-worker/.aws` | One private writable mount for this connection; UID/GID 10001, directories 0700 and files 0600. The optional local driver uses ephemeral tmpfs; persistent cache restoration is not implemented |
 | Root filesystem | Read-only, with a bounded temporary filesystem if needed; drop capabilities and disallow privilege escalation |
@@ -64,7 +64,7 @@ Responses contain `id`, `bindingDigest`, `allocation`, `ok`, and `result` or a s
 
 The handle includes the full binding digest, connection, supervisor, generation, lease ID and resource/cache keys. Every new generation gets fresh keys; cache restoration is not implemented. Claim/lease writes commit together; retryable transaction callbacks contain no external work. Rejected expiry checks still commit quarantine. Clocks that regress behind a retired generation also prevent a new claim.
 
-Receipts belong to a trusted provisioner, **never a browser or child-worker JSON reply**. Their booleans are contractual attestations, not evidence of physical isolation. The supervisor now checks membership/configuration revision and lease before/after provisioning and commands, connects a separate router to each generation, quarantines lost owners and rejects late replies. The lease core's 18 storage tests and supervisor's 21 tests (including two nested stamp cases) are synthetic; no physical worker or company SSO runs. [Implementation and next step](../../docs/plans/2026-10-10-organization-worker-supervisor.md)
+Receipts belong to a trusted provisioner, **never a browser or child-worker JSON reply**. Their booleans are contractual attestations, not evidence of physical isolation. The supervisor now checks membership/configuration revision and lease before/after provisioning and commands, connects a separate router to each generation, quarantines lost owners and rejects late replies. The lease core's 18 storage tests and supervisor's 21 tests (including two nested stamp cases) are synthetic; no physical worker or company SSO runs. [Implementation and next step](../../docs/plans/archive/2026-10-10-organization-worker-supervisor.md)
 
 ## Supervisor and provisioner composition
 

@@ -1,8 +1,9 @@
 # Lessons
 
 - 시스템 Homebrew `node`는 libsimdutf 누락으로 죽는다. `make check`는 repo `.tools/node`를 PATH에 넣는다. 직접 실행할 때는 `PATH=$PWD/.tools/node/bin:$PATH`.
-- 경계 정규식(`scripts/company-build-policy.mjs`)이 `server/(service|index|http|cloud-index).*` 이름을 거부한다. 새 서버 진입점은 다른 이름을 쓴다.
-- 새 서버 테스트·진입점은 `tsconfig.json`의 `files`에 추가해야 타입/경계 검사 대상이 된다.
+- 경계 정규식(`scripts/build/company-build-policy.mjs`)은 원본 repo 이름(`src/(App|main|store).*` 등)을 거부한다. worker 진입점이 `worker-main.ts`인 이유다. 빌드별 허용 폴더(`artifactSources`)를 어기면 그 빌드가 실패한다.
+- `tsconfig.json`은 폴더 단위 `include`라 `apps/`·`packages/`·`tests/` 아래 새 파일은 자동으로 타입/경계 검사 대상이 된다.
+- Vite root는 `apps/web`이고 출력은 repo 루트 `dist-company`다. 실행 중인 로컬 호스트가 이 폴더를 디스크에서 바로 읽으므로, web 빌드가 중간에 실패하면 화면이 깨진다. 실험은 별도 빌드로 하고 운영 호스트는 `.data/host-release` 복사본에서 띄운다.
 - `membershipSchema`는 strict다. web scope 객체(label 포함)를 그대로 펼쳐 넣으면 실패한다.
 - API는 Host==publicOrigin을 요구하므로, 테스트 서버는 먼저 listen하고 실제 포트로 origin을 만든 뒤 compose한다.
 - Cloudscape Select option은 `getByRole('option', { name })`로 고른다. `getByText`는 screenreader 복제 때문에 strict mode 위반.

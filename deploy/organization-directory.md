@@ -41,4 +41,4 @@ Organizations 목록은 관리 계정 또는 delegated administrator의 해당 �
 
 ## 로컬 검증
 
-`server/organization-directory.test.ts`는 고정 명령·상태/부분 거절·빈 다음 페이지·미지원 State·조직/ARN 변조·주체 변경/취소와 페이지/하위 OU·만료/worker 격리·재인증/초기화·OU 이동·순환 token을 확인한다. HTTP→registry→worker와 private pipe/router에서도 cursor 전달/재시도를 검증한다. `test:organization-web`는 계정/OU 페이지·하위 탐색/복귀·만료 후 재조회·필터·거절/사용자 전환과 한/영 모바일 접근성을 확인한다. 실제 AWS API·배포 검증과 구분한다.
+`tests/unit/worker/directory-reads.test.ts`는 고정 명령·상태/부분 거절·빈 다음 페이지·미지원 State·조직/ARN 변조·주체 변경/취소와 페이지/하위 OU·만료/worker 격리·재인증/초기화·OU 이동·순환 token을 확인한다. HTTP→registry→worker와 private pipe/router에서도 cursor 전달/재시도를 검증한다. `test:organization-web`는 계정/OU 페이지·하위 탐색/복귀·만료 후 재조회·필터·거절/사용자 전환과 한/영 모바일 접근성을 확인한다. 실제 AWS API·배포 검증과 구분한다.

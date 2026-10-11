@@ -1,6 +1,6 @@
 # 회사 조직 AWS API 구성
 
-`server/modules/aws/organization/index.ts`는 `createOrganizationApiServer`, `composeOrganizationApi`, `organizationDeploymentSchema`, `OrganizationWebAccess`, `OidcJwtVerifier`, 연결/worker runtime과 identity/store/provisioner port를 export한다. 회사가 명시적인 composition에서 이 port들을 연결해야 한다. 외부에 공개하는 운영 server entry와 자동 membership 등록은 없다.
+`apps/host/src/index.ts`는 `createOrganizationApiServer`, `composeOrganizationApi`, `organizationDeploymentSchema`, `OrganizationWebAccess`, `OidcJwtVerifier`, 연결/worker runtime과 identity/store/provisioner port를 export한다. 회사가 명시적인 composition에서 이 port들을 연결해야 한다. 외부에 공개하는 운영 server entry와 자동 membership 등록은 없다.
 
 ## Composition
 
@@ -46,7 +46,7 @@ membership은 `local.mjs actor --issuer <url> --subject <sub> [--tenant <id>]`�
 
 ## DynamoDB 운영 저장소
 
-회사 선택 저장소는 DynamoDB다. `DynamoDbCloudStore`(`server/cloud-dynamodb-store.ts`, 라이브러리 export)는 SDK 없이 `node:crypto` SigV4로 DynamoDB JSON API를 호출한다. 경계 정책의 `@aws-sdk` 거부를 유지한다.
+회사 선택 저장소는 DynamoDB다. `DynamoDbCloudStore`(`apps/host/src/storage/dynamodb-store.ts`, 라이브러리 export)는 SDK 없이 `node:crypto` SigV4로 DynamoDB JSON API를 호출한다. 경계 정책의 `@aws-sdk` 거부를 유지한다.
 
 - 테이블: 파티션 키 `pk`(String) 하나. 항목은 `version`(Number)과 `payload`(JSON String)다. 삭제 보호와 PITR 같은 운영 정책은 회사가 정한다.
 - 일관성: 읽기는 `ConsistentRead`이고 key별 version을 기록한다. 커밋은 `TransactWriteItems` 한 번이며, 쓴 key는 조건부 Put이고 읽기만 한 key는 ConditionCheck다. 조건이 실패하거나 트랜잭션이 충돌하면 callback을 다시 실행한다(최대 10회 후 409). 단일 key 읽기는 커밋 호출을 생략하고, 여러 key를 읽기만 한 트랜잭션도 ConditionCheck로 검증한다(쓰기 용량 소모).
@@ -62,7 +62,7 @@ const store = new DynamoDbCloudStore({ tableName, region }, { credentials: compa
 
 ## 운영 저장소 적합성
 
-`server/cloud-store-conformance.ts`의 `cloudStoreConformance(name, open)`는 회사 운영 저장소 adapter가 통과해야 할 `CloudStore` 계약 테스트다. 미존재 key, 값 복사, 예외 시 무커밋, read-before-write, 동시 read-modify-write 무손실과 callback 재실행, 동시 생성 충돌, 1MiB 초과 거부(413 `record_too_large`), 재오픈 후 유지(선택)를 검사한다. 로컬 `SqliteCloudStore`는 `server/cloud-store.test.ts`로 이 묶음을 통과한다. 충돌 감지가 없는 고의로 잘못된 adapter는 5개 항목에서 실패하는 것을 확인했다. 일회용 합성 DB에서만 실행하며 백업·복구·감사 불변성의 증거가 아니다.
+`tests/contract/storage/store-conformance.ts`의 `cloudStoreConformance(name, open)`는 회사 운영 저장소 adapter가 통과해야 할 `CloudStore` 계약 테스트다. 미존재 key, 값 복사, 예외 시 무커밋, read-before-write, 동시 read-modify-write 무손실과 callback 재실행, 동시 생성 충돌, 1MiB 초과 거부(413 `record_too_large`), 재오픈 후 유지(선택)를 검사한다. 로컬 `SqliteCloudStore`는 `tests/contract/storage/store.test.ts`로 이 묶음을 통과한다. 충돌 감지가 없는 고의로 잘못된 adapter는 5개 항목에서 실패하는 것을 확인했다. 일회용 합성 DB에서만 실행하며 백업·복구·감사 불변성의 증거가 아니다.
 
 ## HTTP
 
@@ -87,7 +87,7 @@ const store = new DynamoDbCloudStore({ tableName, region }, { credentials: compa
 
 inspect는 등록된 서비스(`alarms`·`metrics`·`ec2`·`eks`·`rds`·`elasticache`·`msk`·`lambda`·`dynamodb`·`apigateway`·`ssm`·`automation`·`patch`)만 받고 각 서비스는 worker의 고정 CLI 명령 하나로 대응한다(EKS는 버전 지원 목록과 클러스터 상세를 시간 예산 안에서 추가로 읽는다). 서비스 하나의 IAM 거부·요청 제한·시간 초과는 앞뒤 STS 확인을 통과하면 `read_*` 코드(409)로 그 조회만 실패시키고 세션을 유지한다. directory는 worker 발급 cursor만 받으며 raw parent/profile/NextToken을 받지 않는다. [directory 범위](organization-directory.md)를 따른다. 알 수 없는 개인/GCP/데모 경로는 404이고, 미설정 회사 API는 503이다.
 
-외부 호출은 재시도 가능한 저장 transaction 밖에 둔다. 응답 유실/도중 권한 회수/만료는 unknown을 보존하고 같은 요청을 자동 재실행하지 않는다. 실제 물리 driver·회사 웹/SSO와 재시작·두 사용자 격리를 확인해야 한다. [인증 경계](../Identity.md) · [worker 계약](organization-cli-worker/README.md)
+외부 호출은 재시도 가능한 저장 transaction 밖에 둔다. 응답 유실/도중 권한 회수/만료는 unknown을 보존하고 같은 요청을 자동 재실행하지 않는다. 실제 물리 driver·회사 웹/SSO와 재시작·두 사용자 격리를 확인해야 한다. [인증 경계](../docs/architecture/identity.md) · [worker 계약](organization-cli-worker/README.md)
 
 ## 다계정·다리전 동기화
 

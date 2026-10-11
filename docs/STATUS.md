@@ -12,7 +12,7 @@
 - worker 격리: 실제 Docker driver로 합성 사용자 2명 30/30을 통과했다(internal 네트워크, AWS 미접속). [결과](../deploy/organization-cli-worker/isolation-verification.md#로컬-실행-결과-2026-10-10-docker-desktop-2833-linux-arm64)
 - AWS 인증: 회사는 Identity Center start URL + Device Code 방식이다. 개인 계정을 읽기 전용으로 확인한 결과 Organizations management account이고 Identity Center instance는 없다. 무료로 같은 셋업이 가능하다. [절차](../deploy/identity-center-test-setup.md)
 
-게이트: `make check` 종료 0, 서버 219/219, 회사 smoke·조직 웹 계약 통과. [검증 기록](verification.md).
+게이트: `make check` 종료 0, 단위·계약 219/219, 회사 smoke·조직 웹 계약 통과. [검증 기록](history/verification.md).
 
 개인 테스트 계정에서 **실제 Identity Center SAML 웹 로그인 → 연결 → Device Code 승인 → STS 확인 → Lambda 조회 → AWS 로그아웃 → 정상 종료 회수**까지 end-to-end 통과(CLI 2.30 `#/device` URL 결함 발견·수정). 미검증: 운영 DynamoDB 테이블·IAM role과 TLS/proxy, 회사 Linux 호스트 격리·장애 주입, 회사 배포, 운영자 요구.
 

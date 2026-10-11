@@ -9,4 +9,4 @@
 3. 응답 유실·process 재시작·권한 회수·지연 provisioning·한 사용자 로그아웃.
 4. 종료/부재·cache 차단이 미확인일 때 unknown 보존과 자동 재배정 방지.
 
-현재 synthetic/Node-process 테스트와 Dockerfile 작성은 이 검증을 대신하지 않는다. [계약](../../deploy/organization-cli-worker/README.md)
+현재 synthetic/Node-process 테스트와 Dockerfile 작성은 이 검증을 대신하지 않는다. [계약](../../../deploy/organization-cli-worker/README.md)
