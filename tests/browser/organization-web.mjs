@@ -264,6 +264,8 @@ try {
   await nav.getByRole('link', { name: '조직 계정', exact: true }).click();
   await expect(page.getByText('ap-northeast-2 · VPC 1/2', { exact: true })).toBeVisible(); await expect(page.getByText('권한 없음(할당 없음)', { exact: true })).toBeVisible();
   await expect(page.getByText('Synthetic active account', { exact: true })).toBeVisible();
+  await expect(page.getByText('수집하지 않은 리전', { exact: true })).toBeVisible(); // the table says how many candidate regions were left out
+  await expect(page.getByText('설정된 수집 범위의 현황', { exact: false }).first()).toBeVisible(); // the sync bar says this is the configured scope, not every asset
   await expect(page.getByText('Synthetic direct OU', { exact: true })).toBeVisible();
   await expect(page.getByText('계정의 다음 페이지가 있습니다. 빈 페이지여도 전체 계정이 0개라는 뜻은 아닙니다.', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '계정 다음 페이지', exact: true }).click();
